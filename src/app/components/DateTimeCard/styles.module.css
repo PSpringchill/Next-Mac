@@ -1,0 +1,11 @@
+/* components/DateTimeCard.module.css */
+
+.card {
+    background-color: #08c039;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(239, 219, 219, 0.1);
+    padding: 16px;
+    width: 200px;
+    text-align: center;
+  }
+  
