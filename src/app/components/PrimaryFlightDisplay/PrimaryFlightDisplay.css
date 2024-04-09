@@ -1,0 +1,110 @@
+.altimeter {
+    width: 70px;
+    height: 450px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: white;
+    background: #333;
+    border: 3px solid #555;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+    border-radius: 1px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    margin-bottom: 40px;
+}
+.scale-mode-selector {
+    background: #222121;
+    color: rgb(61, 57, 57);
+}
+.tape-container {
+    /* Make sure this is tall enough to display all the range you need without markers overlapping */
+    position: relative;
+    width: 100%;
+    height: 300%; /* Make sure the container is tall enough */
+    overflow: hidden;
+    background: #000;
+    margin: 0;
+}
+
+.tape {
+    /* Adjust to ensure the tape moves up and down within the container */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 100%;
+    color: #fff;
+    font-size: 12px; /* Adjust font size as needed */
+    transform: none;
+    transition: top 0.2s ease-in-out; /* Animate the tape movement */
+}
+
+.altitude-indicator {
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    background: #222;
+    transform: translateY(-50%);
+    color: #0f0; /* Green color for the current altitude */
+    text-align: center;
+    font-size: 14px; /* Larger font size for better visibility */
+    padding: 5px;
+    box-shadow: 0 0 5px #0f0; /* Glowing effect */
+    z-index: 2;
+    border-radius: 5px;
+    margin-right: 0px;
+}
+
+.altitude-indicator span {
+    display: inline-block;
+    background: #444;
+    width: 100%;
+    font-size: 14px; /* Adjust font size as needed */
+    border-radius: 3px;
+    padding: 2px 0;
+}
+
+.pressure-setting {
+    background: #222;
+    color: #fff;
+    font-size: 12px;
+    padding: 5px;
+    width: 100%;
+    text-align: center;
+    border-radius: 5px;
+    color: #0f0;
+}
+
+.tape-marker {
+    position: absolute;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding-right: 5px; /* Adjust padding as needed */
+    box-sizing: border-box;
+}
+
+.tape-marker span {
+    font-size: 12px; /* Adjust font size as needed */
+    color: #fff; /* Color for the scale numbers */
+    align-items: right;
+}
+.altitude-indicator span {
+    /* Add a higher z-index to ensure it's above the scale numbers */
+    z-index: 3;
+}
+.tape-marker.major {
+    border-top: 2px solid #0f0;
+}
+
+.tape-marker.minor {
+    border-top: 1px solid #080;
+}
+
+.tape-marker span {
+    margin-right: 5px;
+    border-top: 1px solid rgb(255, 255, 255);
+}

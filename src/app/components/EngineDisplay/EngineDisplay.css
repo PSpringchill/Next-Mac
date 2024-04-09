@@ -1,0 +1,119 @@
+/* EngineWarningDisplay.module.css */
+
+.ewd-container {
+    background-color: black;
+    color: white;
+    font-family: 'Consolas', 'Courier New', monospace;
+    width: 300px; /* Set to the width of your display */
+    height: 550px; /* Set to the height of your display */
+    padding: 10px;
+    position: relative;
+    margin-left: 40px;
+  }
+  
+  .ewd-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(30%,2fr)); /* Adjust the width here */
+    gap: 20px; /* Adjust the gap between items */
+    margin-bottom: 10px;
+  }
+  
+  .ewd-gauge {
+    position: relative;
+    color: limegreen;
+    font-size: 16px;
+    height: 150px; /* Adjust based on your gauge size */
+    margin-left: 10px;
+  }
+  .ewd-gauge .ewd-gauge-container {
+    position: relative; /* Add relative positioning to the gauge container */
+    /* other styles */
+  }
+  
+  .ewd-gauge-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); /* Adjust the number of columns as needed */
+    gap: 10px; /* Adjust the gap between items */
+    margin-bottom: 20px;
+  }
+  
+  .ewd-gauge .ewd-arc {
+    stroke: limegreen;
+    fill: transparent;
+  }
+  
+  .ewd-gauge .ewd-indicator {
+    color: orange;
+    font-size: 16px;
+    position: absolute;
+    transform: translate(-30%, -30%);
+    margin-bottom: 20px;
+  }
+  
+  .ewd-warning {
+    background-color: red;
+    color: yellow;
+    font-size: 16px;
+    padding: 5px;
+    margin-top: 40px;
+    display: block;
+  }
+  
+  .ewd-status1,
+  .ewd-status2,
+  .ewd-status3 {
+    color: limegreen;
+    font-size: 14px;
+  }
+  
+  .ewd-status1 .text-left1,
+  .ewd-status2 .text-left2,
+  .ewd-status3 .text-left3 {
+    font-size: 16px;
+    padding: 5px;
+    align-self: flex-start;
+  }
+  
+  .ewd-info {
+    color: rgb(121, 209, 207);
+    font-size: 15px;
+    padding: 5px;
+    display: block;
+    text-align: right; /* Align content to start from the right */
+    justify-content: flex-end; /* Align content to start from the right */
+  }
+  
+  .ewd-fob {
+    position: absolute;
+    left: 14px;
+    color: rgb(95, 215, 207);
+    font-size: 16px;
+  }
+  .ewd-gauge.red {
+    color: red;
+  }
+  .ewd-gauge.red .ewd-arc {
+    stroke: red;
+  }
+  
+  .ewd-gauge-value-box {
+    position: absolute;
+    bottom: 30px; /* Adjust this value to position the box below the gauge */
+    left: 45%;
+    transform: translate(-50%, 0);
+    color: #20d823;
+    text-align: center;
+    font-size: 16px;
+    padding: 5px; /* Adjust padding to create space inside the box */
+    border: 2px solid green;
+    background-color: black;
+    width: 50px;
+    height: 35px;
+  }
+  
+  .ewd-gauge-value-box.red {
+    border-color: red;
+    color: red;
+  }
+  
+  

@@ -1,0 +1,36 @@
+.pfd-display {
+    background-color: black;
+    color: green;
+    font-family: 'Consolas', 'Courier New', monospace;
+    padding: 5px;
+    display: inline-block;
+}
+  
+.pfd-section {
+    border-right: 1px solid green;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+}
+.pfd-alt {
+    color: rgb(37, 221, 212);
+}
+  
+.pfd-section:last-child {
+    border-right: none;
+}
+  
+.pfd-mode {
+    color: magenta;
+}
+  
+.pfd-value {
+    color: white;
+}
+
+.pfd-text {
+    font-size: 18px;
+    line-height: 1;
+}
+  

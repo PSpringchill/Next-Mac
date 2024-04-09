@@ -1,23 +1,19 @@
 'use client';
-
-import React, { useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import Image from 'next/image';
-
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
-
-
 import { Card } from './components/MacOsDock/Card/Page';
 import { Dock } from './components/MacOsDock/Dock/Page';
 import { DockCard } from './components/MacOsDock/DockCard/Page';
 import { DockDivider } from './components/MacOsDock/DockDivider/Page';
 import DateTimeCard from './components/DateTimeCard/DateTimeCard';
-
+import { OrderBookProvider } from './api/Page';
+import Dashboard from './pages/Dashboard';
 import MessageHub, { AddFunction } from './notification';
 import { loremIpsum } from 'lorem-ipsum';
-
 
 const GRADIENTS = [
   './contract1.png',
@@ -30,10 +26,12 @@ const GRADIENTS = [
 ];
 
 export default function Home() {
+  const [message, setMessage] = useState<string>('');
   const ref = useRef<null | AddFunction>(null);
 
   const handleClick = () => {
-    ref.current?.(loremIpsum());
+    ref.current?.(`Loading..`  );
+    setMessage(`Loading..`);
   };
 
   return (
@@ -46,6 +44,15 @@ export default function Home() {
           <DateTimeCard />
         </Toolbar>
       </AppBar>
+
+{/* Warp the Dashboard */}
+      <OrderBookProvider>
+        <div>
+      <Container>
+        <Dashboard />
+      </Container>
+      </div>
+      </OrderBookProvider>
 
         <Container>
           <button className="p-4 mt-2" onClick={handleClick}>Notification</button>
@@ -71,9 +78,6 @@ export default function Home() {
                 )
               )}
             </Dock>
- 
-
-        
         </footer>
      
     </>
