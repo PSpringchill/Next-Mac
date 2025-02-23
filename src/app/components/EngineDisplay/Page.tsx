@@ -68,15 +68,15 @@ const EngineDisplay: React.FC = () => {
               height={120}
               startAngle={-110}
               endAngle={110}
-              value={askPercentage} // Pass the correct value here
+              value={bidPercentage} // Pass the correct value here
             >
               <GaugeReferenceArc />
               <GaugeValueArc />
-              <GaugePointer value={askPercentage} /> {/* Pass the value prop */}
+              <GaugePointer value={bidPercentage} /> {/* Pass the value prop */}
             </GaugeContainer>
             N1
           <div className={`ewd-gauge-value-box`}>
-            {askPercentage.toFixed(1)}
+            {bidPercentage.toFixed(1)}
           </div>
         </div>
         <div className="ewd-column ewd-gauge">
@@ -85,15 +85,15 @@ const EngineDisplay: React.FC = () => {
               height={120}
               startAngle={-110}
               endAngle={110}
-              value={bidPercentage} // Pass the correct value here
+              value={askPercentage} // Pass the correct value here
             >
               <GaugeReferenceArc />
               <GaugeValueArc />
-              <GaugePointer value={bidPercentage} /> {/* Pass the value prop */}
+              <GaugePointer value={askPercentage} /> {/* Pass the value prop */}
             </GaugeContainer>
             N2
           <div className={`ewd-gauge-value-box`}>
-            {bidPercentage.toFixed(1)}
+            {askPercentage.toFixed(1)}
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
+import Grid from '@mui/material/Grid';
 import { Card } from './components/MacOsDock/Card/Page';
 import { Dock } from './components/MacOsDock/Dock/Page';
 import { DockCard } from './components/MacOsDock/DockCard/Page';
@@ -14,6 +15,7 @@ import { OrderBookProvider } from './api/Page';
 import Dashboard from './pages/Dashboard';
 import MessageHub, { AddFunction } from './notification';
 import { loremIpsum } from 'lorem-ipsum';
+
 
 const GRADIENTS = [
   './contract1.png',
@@ -49,13 +51,18 @@ export default function Home() {
       <OrderBookProvider>
         <div>
       <Container>
-        <Dashboard />
+        <Grid container spacing={2}>
+            <Grid item xs={12} md={8}>
+                <Dashboard />
+            </Grid>
+ 
+        </Grid>
       </Container>
       </div>
       </OrderBookProvider>
-
+      <div style={{ marginBottom: '-250px' }}>
         <Container>
-          <button className="p-4 mt-2" onClick={handleClick}>Notification</button>
+          {/* <button className="p-5 mt-2" onClick={handleClick}>Notification</button> */}
           <MessageHub
             config={{ tension: 125, friction: 20, precision: 0.1 }}
             timeout={3000}
@@ -64,9 +71,10 @@ export default function Home() {
               ref.current = add;
             }}
           </MessageHub>
+     
         </Container>
-
-        <footer className="py-4 bg-dark text-light text-center" style={{ position: 'fixed', bottom: 0, left: 0, right: 0 }}>    
+        </div>
+        <footer className="py-4 bg-dark text-light text-center" style={{ position: 'fixed', bottom: -10, left: 0, right: 0 }}>    
             <Dock>
               {GRADIENTS.map((src, index) =>
                 src ? (

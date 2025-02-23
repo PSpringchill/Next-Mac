@@ -22,7 +22,7 @@ const AutopilotDisplay: React.FC = () => {
         <span className={styles['pfd-text']}>
           1FD2
           </span>
-          <div className={`${styles['pfd-alt']} ${styles['pfd-text']}`} style={{ marginTop: '45px', color: 'white' }}>  A/THR</div>
+          <div className={`${styles['pfd-alt']} ${styles['pfd-text']}`} style={{ marginLeft: '-40px' , marginTop: '45px', color: 'Magenta' }}>A/THR</div>
         
           </div>
         </div>

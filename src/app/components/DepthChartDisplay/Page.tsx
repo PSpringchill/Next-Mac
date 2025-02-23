@@ -1,13 +1,19 @@
 import React, { useEffect, useState, useRef, useContext } from 'react';
 import Highcharts from 'highcharts';
 import { OrderBookContext } from '../../api/Page';
-import AutopilotDisplay from '../AutopilotDisplay/AutopilotDisplay';
-import { Container } from '@mui/material/Container';
+import AutopilotDisplay from '../AutopilotDisplay/Page';
+import { Container } from '@mui/material';
 import './DepthchartDisplay.css';
 
 const DepthchartDisplay: React.FC = () => {
-    const { orderBookData } = useContext(OrderBookContext);
-    const [chart, setChart] = useState<any>(null); // State to hold the Highcharts instance
+    const context = useContext(OrderBookContext);
+    
+    if (!context) {
+        return <div>Loading...</div>;
+    }
+    
+    const { orderBookData } = context;
+    const [chart, setChart] = useState<Highcharts.Chart | null>(null); // State to hold the Highcharts instance
     const chartRef = useRef<HTMLDivElement>(null); // Reference to the chart container
     const [top3Bids, setTop3Bids] = useState<[number, number][]>([]);
     const [top3Asks, setTop3Asks] = useState<[number, number][]>([]);
@@ -119,18 +125,10 @@ const DepthchartDisplay: React.FC = () => {
         }
 
         // Update chart data when order book data changes
-        if (chart && orderBookData) {
-            // Separate bids and asks from the fetched data and calculate top bids and asks
-            const bids = orderBookData.bids.map((bid: [string, string]) => [
-                parseFloat(bid[0]),
-                parseFloat(bid[1]),
-            ]);
-            const asks = orderBookData.asks.map((ask: [string, string]) => [
-                parseFloat(ask[0]),
-                parseFloat(ask[1]),
-            ]);
+        if (orderBookData && chart) {
+            const bids = orderBookData.bids.map(bid => [parseFloat(bid[0]), parseFloat(bid[1])] as [number, number]);
+            const asks = orderBookData.asks.map(ask => [parseFloat(ask[0]), parseFloat(ask[1])] as [number, number]);
 
-            // Assuming the order book data is already sorted by price
             const highestBid = bids[0] ? bids[0][0] : 0;
             const lowestAsk = asks[0] ? asks[0][0] : 0;
 
@@ -139,21 +137,22 @@ const DepthchartDisplay: React.FC = () => {
             asks.sort((a, b) => b[1] - a[1]);
 
             // Select the top 3 bid and ask values
-            const top3Bids = bids.slice(0, 3);
-            const top3Asks = asks.slice(0, 3);
+            const top3BidValues = bids.slice(0, 3);
+            const top3AskValues = asks.slice(0, 3);
 
             // Update states for top bids and asks and highest size
-            setTop3Bids(top3Bids);
-            setTop3Asks(top3Asks);
-            const topBidSize = top3Bids.length > 0 ? Math.max(...top3Bids.map((bid) => bid[1])) : null;
-            const topAskSize = top3Asks.length > 0 ? Math.max(...top3Asks.map((ask) => ask[1])) : null;
+            setTop3Bids(top3BidValues);
+            setTop3Asks(top3AskValues);
+
+            const topBidSize = top3BidValues.length > 0 ? Math.max(...top3BidValues.map(bid => bid[1])) : 0;
+            const topAskSize = top3AskValues.length > 0 ? Math.max(...top3AskValues.map(ask => ask[1])) : 0;
             setHighestSize(Math.max(topBidSize, topAskSize));
 
             // Update the chart series data
-            chart.series[0].setData(top3Bids);
-            chart.series[1].setData(top3Asks);
+            chart.series[0].setData(top3BidValues);
+            chart.series[1].setData(top3AskValues);
         }
-    }, [chart, orderBookData,]);
+    }, [chart, orderBookData]);
 
     return (
         <div style={{ display: 'flex', justifyContent: 'center', marginLeft: '-100px' }}>
@@ -167,25 +166,25 @@ const DepthchartDisplay: React.FC = () => {
                     }}
                 >
                 <div style={{ textAlign: 'left' }}>
-                        <h3>Top 3 Asks</h3>
-                        {top3Asks.map((ask, index) => (
+                        <h3>Top 3 Bids</h3>
+                        {top3Bids.map((bid, index) => (
                             <div key={index}>
-                                <div style={{ color: ask[1] === highestSize ? 'yellow' : 'red' }}>
-                                    {`${ask[0]}`}
+                                <div style={{ color: bid[1] === highestSize ? 'yellow' : 'red' }}>
+                                    {`${bid[0]}`}
                                 </div>
-                                <div style={{ textAlign: 'left', color: 'grey' }}>{ask[1]}</div>
+                                <div style={{ textAlign: 'left', color: 'grey' }}>{bid[1]}</div>
                             </div>
                         ))}
                     </div>
                     {/* Display top 3 bids and asks */}
                     <div style={{ textAlign: 'right' }}>
-                        <h3>Top 3 Bids</h3>
-                        {top3Bids.map((bid, index) => (
+                        <h3>Top 3 Asks</h3>
+                        {top3Asks.map((ask, index) => (
                             <div key={index}>
-                                <div style={{ color: bid[1] === highestSize ? 'yellow' : 'green' }}>
-                                    {`${bid[0]}`}
+                                <div style={{ color: ask[1] === highestSize ? 'yellow' : 'green' }}>
+                                    {`${ask[0]}`}
                                 </div>
-                                <div style={{ textAlign: 'right', color: 'grey' }}>{bid[1]}</div>
+                                <div style={{ textAlign: 'right', color: 'grey' }}>{ask[1]}</div>
                             </div>
                         ))}
                     </div>
