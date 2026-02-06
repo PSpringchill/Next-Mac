@@ -1,0 +1,11 @@
+.chart-container {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr); /* Creates 5 columns, adjust the number of columns as needed */
+    grid-gap: 20px; /* Space between grid items */
+    align-items: center; /* Centers items vertically */
+  }
+  
+  /* Optional: If you want specific control over the width of each component, 
+  you can replace the grid-template-columns line with something more custom, 
+  such as: grid-template-columns: 2fr 2fr 3fr 1fr 1fr; */
+  

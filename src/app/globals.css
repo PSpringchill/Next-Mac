@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+#root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+  height: 100%;
+  width: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  font-family: system-ui;
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+*,
+*:after,
+*:before {
+  box-sizing: border-box;
+}
+
+.custom-toolbar {
+  height: 50%; /* Adjust as needed */
+  background-color: #171717;
+}
+
+.chart-container {
+  background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%); /* Blue gradient */
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.dark { /* Assuming your image has the 'dark:invert' class */
+  width: 100px; /* Set the desired width */
+  height: auto; /* Maintain aspect ratio */ 
+}

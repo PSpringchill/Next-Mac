@@ -1,0 +1,14 @@
+#depthchart {
+    font-family: 'Consolas', 'Courier New', monospace;
+    min-width: 300px;
+    background-color: black;
+    color: azure;
+    max-width: 640px;
+    height: 200px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    margin-left: 30px;
+    margin-right: 0px;
+  }
+
+  
