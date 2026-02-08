@@ -64,7 +64,7 @@ describe('SpeedTape', () => {
       <SpeedTape smoothedTech={makeTechData({ midPrice: 42000.1234 })} wallRangePct={5} priceRoC={0} />
     );
     const texts = container.querySelectorAll('text');
-    const priceText = Array.from(texts).find(t => t.textContent?.includes('42000.1234'));
+    const priceText = Array.from(texts).find(t => t.textContent?.includes('42000.12'));
     expect(priceText).toBeTruthy();
   });
 });

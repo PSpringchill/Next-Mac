@@ -91,18 +91,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
     }
   });
 
-  // Current price marker
-  const midY = priceToY(mid);
-  elements.push(
-    <g key="price-marker" style={{ transition: 'transform 0.8s ease-out' }} transform={`translate(0, 0)`}>
-      <polygon points={`${10},${midY} ${22},${midY - 12} ${108},${midY - 12} ${120},${midY} ${108},${midY + 12} ${22},${midY + 12}`} fill="rgba(0,0,0,0.9)" stroke={ECAM.GREEN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }} />
-      <text x="65" y={midY + 5} textAnchor="middle" fill={ECAM.GREEN} fontSize="13" fontWeight="bold" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>
-        {mid.toFixed(4)}
-      </text>
-    </g>
-  );
-
-  // TP / SL price-level markers from Radar Vector
+  // TP / SL price-level markers from Radar Vector (render before price so price is on top)
   if (rv && rv.searchCount > 0 && rv.tpPct > 0) {
     const tpPrice = mid * (1 + rv.tpPct / 100);
     const slPrice = mid * (1 - rv.slPct / 100);
@@ -112,7 +101,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
     const slColor = rvEstablished ? ECAM.RED : ECAM.DIM;
 
     if (tpY > tapeY0 && tpY < tapeY0 + tapeH) {
-      elements.push(<line key="tp-line" x1="60" y1={tpY} x2="140" y2={tpY} stroke={tpColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<line key="tp-line" x1="58" y1={tpY} x2="140" y2={tpY} stroke={tpColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.7" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
       elements.push(
         <g key="tp-tag" style={{ transition: 'transform 0.8s ease-out' }}>
           <rect x="0" y={tpY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={tpColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
@@ -122,7 +111,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
       );
     }
     if (slY > tapeY0 && slY < tapeY0 + tapeH) {
-      elements.push(<line key="sl-line" x1="60" y1={slY} x2="140" y2={slY} stroke={slColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<line key="sl-line" x1="58" y1={slY} x2="140" y2={slY} stroke={slColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.7" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
       elements.push(
         <g key="sl-tag" style={{ transition: 'transform 0.8s ease-out' }}>
           <rect x="0" y={slY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={slColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
@@ -132,6 +121,17 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
       );
     }
   }
+
+  // Current price marker (centered on tape, rendered last for z-priority)
+  const midY = priceToY(mid);
+  elements.push(
+    <g key="price-marker" style={{ transition: 'transform 0.8s ease-out' }}>
+      <polygon points={`${62},${midY} ${72},${midY - 11} ${128},${midY - 11} ${138},${midY} ${128},${midY + 11} ${72},${midY + 11}`} fill="rgba(0,0,0,0.95)" stroke={ECAM.GREEN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }} />
+      <text x="100" y={midY + 5} textAnchor="middle" fill={ECAM.GREEN} fontSize="13" fontWeight="bold" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>
+        {mid.toFixed(2)}
+      </text>
+    </g>
+  );
 
   // Rate of change gauge
   const rocClamp = Math.max(-5, Math.min(5, priceRoC));

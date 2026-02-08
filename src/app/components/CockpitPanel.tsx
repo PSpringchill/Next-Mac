@@ -23,7 +23,14 @@ const CockpitPanel: React.FC = () => {
   const { portfolioState, status, config } = useRiskManager();
   const paretoState = useTradingStore((s) => s.paretoState);
   const radarVector = useTradingStore((s) => s.radarVector);
-  const [wallRangePct, setWallRangePct] = useState(5);
+  const [wallRangePct, setWallRangePct] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('speedTapeScale');
+      if (saved) { const n = parseFloat(saved); if (!isNaN(n) && n > 0) return n; }
+    }
+    return 5;
+  });
+  useEffect(() => { localStorage.setItem('speedTapeScale', String(wallRangePct)); }, [wallRangePct]);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const wallRangeOptions = [2, 5, 10];
   const scaleSteps = [0.5, 1, 2, 3, 5, 7, 10, 15, 20];
@@ -37,7 +44,6 @@ const CockpitPanel: React.FC = () => {
     setWallRangePct(prev => {
       const idx = scaleSteps.indexOf(prev);
       if (idx >= 0 && idx < scaleSteps.length - 1) return scaleSteps[idx + 1];
-      // If current value not in steps, find nearest larger
       const next = scaleSteps.find(s => s > prev);
       return next ?? scaleSteps[scaleSteps.length - 1];
     });
