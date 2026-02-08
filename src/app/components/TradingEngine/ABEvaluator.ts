@@ -74,10 +74,14 @@ class MDPTradingEngine implements TradingEngineLike {
     const direction = action <= 4 ? -1 : action <= 9 ? 0 : 1;
     const strength = action <= 4 ? (5 - action) / 5 : action >= 10 ? (action - 9) / 5 : 0.1;
 
+    // Sigmoid normalization: maps any Q-value range to (0, 1)
+    const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+    const confidence = sigmoid(maxValue * 2); // scale for sensitivity
+
     return {
       direction,
       strength,
-      confidence: Math.min(1, Math.abs(maxValue) || 0.1),
+      confidence,
       timestamp: Date.now(),
       metadata: { action, qValue: maxValue }
     };
@@ -85,27 +89,43 @@ class MDPTradingEngine implements TradingEngineLike {
 }
 
 class BaselineGBFSEngine implements TradingEngineLike {
+  private prevMid = 0;
+
   async processMarketData(
     orderBook: MarketData['orderBook'],
-    openInterest: MarketData['openInterest'],
-    fundingRate: MarketData['fundingRate']
+    _openInterest: MarketData['openInterest'],
+    _fundingRate: MarketData['fundingRate']
   ): Promise<TradingSignal> {
     const bestBid = parseFloat(orderBook.bids[0]?.[0] ?? '0');
     const bestAsk = parseFloat(orderBook.asks[0]?.[0] ?? '0');
     const mid = (bestBid + bestAsk) / 2;
-    const spread = bestAsk - bestBid;
-    const oi = parseFloat(openInterest.openInterest || '0');
-    const bias = (fundingRate || 0) + (oi % 1000) * 1e-6;
 
-    const direction = bias > 0.0005 ? 1 : bias < -0.0005 ? -1 : 0;
-    const strength = Math.min(1, Math.abs(bias) * 1000 + spread * 10);
+    // Order book imbalance across top 5 levels
+    let bidVol = 0, askVol = 0;
+    const depth = Math.min(5, orderBook.bids.length, orderBook.asks.length);
+    for (let i = 0; i < depth; i++) {
+      bidVol += parseFloat(orderBook.bids[i]?.[1] ?? '0');
+      askVol += parseFloat(orderBook.asks[i]?.[1] ?? '0');
+    }
+    const totalVol = bidVol + askVol;
+    const imbalance = totalVol > 0 ? (bidVol - askVol) / totalVol : 0; // -1 to +1
+
+    // Momentum from price change
+    const momentum = this.prevMid > 0 ? (mid - this.prevMid) / this.prevMid : 0;
+    this.prevMid = mid;
+
+    // Combined signal: imbalance + momentum
+    const rawSignal = imbalance * 0.7 + Math.sign(momentum) * Math.min(1, Math.abs(momentum) * 1000) * 0.3;
+    const direction = rawSignal > 0.05 ? 1 : rawSignal < -0.05 ? -1 : 0;
+    const strength = Math.min(1, Math.abs(rawSignal));
+    const confidence = Math.min(1, Math.abs(imbalance) + strength * 0.5);
 
     return {
       direction,
       strength,
-      confidence: strength,
+      confidence,
       timestamp: Date.now(),
-      metadata: { mid, spread, bias }
+      metadata: { mid, imbalance, momentum }
     };
   }
 }

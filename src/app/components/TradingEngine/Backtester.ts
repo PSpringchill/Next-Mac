@@ -89,7 +89,7 @@ class Backtester {
       );
       
       // Execute trade based on signal
-      if (signal.direction !== 0 && signal.confidence > 0.7) {
+      if (signal.direction !== 0 && signal.confidence > 0.3) {
         const direction = signal.direction > 0 ? 1 : -1;
         const size = Math.abs((portfolio * signal.strength * 0.1) / marketData.price); // 10% risk budget
 

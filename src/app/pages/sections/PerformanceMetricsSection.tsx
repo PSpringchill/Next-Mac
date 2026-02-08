@@ -59,9 +59,10 @@ const PerformanceMetricsSection: React.FC = () => {
     setIsEvaluating(true);
     try {
       const evaluator = new ABEvaluator();
-      const data = recordedData.length > 0 ? recordedData : [];
-      if (data.length === 0) return;
-      const result = await evaluator.run(data as any);
+      if (recordedData.length === 0) return;
+      // Deep-copy to escape immer draft
+      const data = JSON.parse(JSON.stringify(recordedData));
+      const result = await evaluator.run(data);
       setEvaluationResults(result);
     } finally {
       setIsEvaluating(false);
