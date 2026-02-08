@@ -7,40 +7,53 @@ interface TradingAction {
 }
 
 // src/tradingEngine/A3CAgent.ts
+let a3cInstanceCount = 0;
+
 class A3CAgent {
   private actorModel!: tf.LayersModel;
   private criticModel!: tf.LayersModel;
   private optimizer!: tf.Optimizer;
   private gamma: number = 0.99;
   private entropy_beta: number = 0.01;
+  private scopeName: string;
   
   constructor() {
+    this.scopeName = `a3c_${++a3cInstanceCount}_${Date.now()}`;
     this.optimizer = tf.train.adam(0.0001);
     this.buildModels();
+  }
+
+  dispose(): void {
+    this.actorModel?.dispose();
+    this.criticModel?.dispose();
   }
   
   private buildModels() {
     // Actor network
-    const actorInput = tf.input({ shape: [50] });
+    const actorInput = tf.input({ shape: [50], name: `${this.scopeName}_actor_in` });
     const actorHidden1 = tf.layers.dense({
       units: 256,
       activation: 'relu',
-      kernelInitializer: 'heNormal'
+      kernelInitializer: 'heNormal',
+      name: `${this.scopeName}_actor_h1`
     }).apply(actorInput);
     
     const actorHidden2 = tf.layers.dense({
       units: 128,
-      activation: 'relu'
+      activation: 'relu',
+      name: `${this.scopeName}_actor_h2`
     }).apply(actorHidden1);
     
     const policyOutput = tf.layers.dense({
       units: 3, // Buy, Hold, Sell
-      activation: 'softmax'
+      activation: 'softmax',
+      name: `${this.scopeName}_actor_out`
     }).apply(actorHidden2);
     
     this.actorModel = tf.model({
       inputs: actorInput,
-      outputs: policyOutput as tf.SymbolicTensor
+      outputs: policyOutput as tf.SymbolicTensor,
+      name: `${this.scopeName}_actor`
     });
     
     this.actorModel.compile({
@@ -49,24 +62,28 @@ class A3CAgent {
     });
     
     // Critic network
-    const criticInput = tf.input({ shape: [50] });
+    const criticInput = tf.input({ shape: [50], name: `${this.scopeName}_critic_in` });
     const criticHidden1 = tf.layers.dense({
       units: 256,
-      activation: 'relu'
+      activation: 'relu',
+      name: `${this.scopeName}_critic_h1`
     }).apply(criticInput);
     
     const criticHidden2 = tf.layers.dense({
       units: 128,
-      activation: 'relu'
+      activation: 'relu',
+      name: `${this.scopeName}_critic_h2`
     }).apply(criticHidden1);
     
     const valueOutput = tf.layers.dense({
-      units: 1
+      units: 1,
+      name: `${this.scopeName}_critic_out`
     }).apply(criticHidden2);
     
     this.criticModel = tf.model({
       inputs: criticInput,
-      outputs: valueOutput as tf.SymbolicTensor
+      outputs: valueOutput as tf.SymbolicTensor,
+      name: `${this.scopeName}_critic`
     });
 
     this.criticModel.compile({

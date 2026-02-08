@@ -5,6 +5,9 @@ import { Box, Typography } from '@mui/material';
 import { useMLEngine } from '../api/MLContext';
 import { OrderBookContext } from '../api/Page';
 import { useRiskManager } from '../api/RiskContext';
+import { useTradingStore } from '@stores/tradingStore';
+import { AlphaRiskState } from './TradingEngine/ParetoAnalyzer';
+import ParetoMonitor from './ParetoMonitor';
 
 // ─── ECAM Color Constants (Airbus standard) ───
 const ECAM = {
@@ -42,6 +45,7 @@ const CockpitPanel: React.FC = () => {
   const orderBookContext = useContext(OrderBookContext);
   const { mlPrediction, regime, learner, history } = useMLEngine();
   const { portfolioState, status, config } = useRiskManager();
+  const paretoState = useTradingStore((s) => s.paretoState);
   const [wallRangePct, setWallRangePct] = useState(5);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const wallRangeOptions = [2, 5, 10];
@@ -567,21 +571,42 @@ const CockpitPanel: React.FC = () => {
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>POS</Typography>
-            <Typography sx={{ color: ECAM.WHITE, fontSize: '0.8rem', fontWeight: 600 }}>
-              {portfolioState.position.toFixed(3)}
+            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>ALPHA (α)</Typography>
+            <Typography sx={{
+              color: paretoState?.alphaState === AlphaRiskState.SAFE ? ECAM.GREEN
+                : paretoState?.alphaState === AlphaRiskState.ELEVATED ? ECAM.CYAN
+                : paretoState?.alphaState === AlphaRiskState.HIGH ? ECAM.AMBER
+                : paretoState?.alphaState === AlphaRiskState.CRITICAL ? ECAM.RED
+                : paretoState?.alphaState === AlphaRiskState.LOCKOUT ? ECAM.RED
+                : ECAM.DIM,
+              fontSize: '0.8rem', fontWeight: 700,
+            }}>
+              {paretoState?.params?.alpha != null ? paretoState.params.alpha.toFixed(3) : '—'}
             </Typography>
           </Box>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>PNL</Typography>
-            <Typography sx={{ color: portfolioState.dailyPnl >= 0 ? ECAM.GREEN : ECAM.RED, fontSize: '0.8rem', fontWeight: 600 }}>
-              ${portfolioState.dailyPnl.toFixed(2)}
+            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>POS SIZE</Typography>
+            <Typography sx={{
+              color: (paretoState?.positionSizeMultiplier ?? 1) >= 0.8 ? ECAM.GREEN
+                : (paretoState?.positionSizeMultiplier ?? 1) >= 0.5 ? ECAM.AMBER : ECAM.RED,
+              fontSize: '0.8rem', fontWeight: 600,
+            }}>
+              {paretoState?.positionSizeMultiplier != null
+                ? `×${paretoState.positionSizeMultiplier.toFixed(2)}`
+                : '×1.00'}
             </Typography>
           </Box>
           <Box sx={{ textAlign: 'center' }}>
-            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>RISK</Typography>
-            <Typography sx={{ color: portfolioState.availableRiskBudget > 0.5 ? ECAM.GREEN : ECAM.AMBER, fontSize: '0.8rem', fontWeight: 600 }}>
-              {(portfolioState.availableRiskBudget * 100).toFixed(0)}%
+            <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>
+              {paretoState?.params?.isReliable ? 'PARETO' : 'CALIBRATING'}
+            </Typography>
+            <Typography sx={{
+              color: paretoState?.params?.isReliable ? ECAM.GREEN : ECAM.AMBER,
+              fontSize: '0.8rem', fontWeight: 600,
+            }}>
+              {paretoState?.params?.isReliable
+                ? (paretoState.alphaState ?? 'INIT')
+                : `${paretoState?.params?.sampleSize ?? 0} pts`}
             </Typography>
           </Box>
         </Box>
@@ -1261,80 +1286,8 @@ const CockpitPanel: React.FC = () => {
         </Box>
       </Box>
 
-      {/* ═══ LOWER — SYSTEM DISPLAY (SD) ═══ */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' },
-        gap: '2px',
-      }}>
-        {/* RISK OVERLAY */}
-        <Box sx={{ bgcolor: ECAM.PANEL, p: 1.2, border: `1px solid ${ECAM.BORDER}` }}>
-          <Typography sx={{ color: ECAM.WHITE, fontSize: '0.6rem', letterSpacing: '0.12em', mb: 0.8, fontWeight: 700 }}>
-            RISK
-          </Typography>
-          {[
-            { label: 'MARGIN', value: `${(portfolioState.marginUtilization * 100).toFixed(1)}%`, color: portfolioState.marginUtilization > 0.8 ? ECAM.AMBER : ECAM.GREEN },
-            { label: 'DRAWDOWN', value: `$${portfolioState.maxDrawdownToday.toFixed(2)} / ${config.maxDrawdownFromPeak.toFixed(0)}`, color: portfolioState.maxDrawdownToday > config.maxDrawdownFromPeak * 0.5 ? ECAM.AMBER : ECAM.GREEN },
-            { label: 'KILL SW', value: status.killSwitchActive ? 'ARMED' : 'READY', color: status.killSwitchActive ? ECAM.RED : ECAM.GREEN },
-          ].map(({ label, value, color }) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
-              <Typography sx={{ color: ECAM.DIM, fontSize: '0.68rem' }}>{label}</Typography>
-              <Typography sx={{ color, fontSize: '0.72rem', fontWeight: 600 }}>{value}</Typography>
-            </Box>
-          ))}
-        </Box>
-
-        {/* ORDER FLOW */}
-        <Box sx={{ bgcolor: ECAM.PANEL, p: 1.2, border: `1px solid ${ECAM.BORDER}` }}>
-          <Typography sx={{ color: ECAM.WHITE, fontSize: '0.6rem', letterSpacing: '0.12em', mb: 0.8, fontWeight: 700 }}>
-            ORDER FLOW
-          </Typography>
-          {[
-            { label: 'IMBAL', value: `${smoothedTech.imbalance.toFixed(1)}%`, color: smoothedTech.imbalance > 0 ? ECAM.GREEN : ECAM.RED },
-            { label: 'DEPTH', value: `$${smoothedTech.totalDepth.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: ECAM.WHITE },
-            { label: 'LIQ', value: smoothedTech.liquidity.toFixed(1), color: ECAM.WHITE },
-          ].map(({ label, value, color }) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
-              <Typography sx={{ color: ECAM.DIM, fontSize: '0.68rem' }}>{label}</Typography>
-              <Typography sx={{ color, fontSize: '0.72rem', fontWeight: 600 }}>{value}</Typography>
-            </Box>
-          ))}
-        </Box>
-
-        {/* RL / ML STATUS */}
-        <Box sx={{ bgcolor: ECAM.PANEL, p: 1.2, border: `1px solid ${ECAM.BORDER}` }}>
-          <Typography sx={{ color: ECAM.WHITE, fontSize: '0.6rem', letterSpacing: '0.12em', mb: 0.8, fontWeight: 700 }}>
-            RL CORE
-          </Typography>
-          {[
-            { label: 'ACCURACY', value: `${(mlMetrics.accuracy * 100).toFixed(1)}%`, color: mlMetrics.accuracy > 0.5 ? ECAM.GREEN : ECAM.AMBER },
-            { label: 'LOSS', value: mlMetrics.loss.toFixed(5), color: ECAM.WHITE },
-            { label: 'SAMPLES', value: `${mlMetrics.sampleCount}`, color: ECAM.WHITE },
-          ].map(({ label, value, color }) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
-              <Typography sx={{ color: ECAM.DIM, fontSize: '0.68rem' }}>{label}</Typography>
-              <Typography sx={{ color, fontSize: '0.72rem', fontWeight: 600 }}>{value}</Typography>
-            </Box>
-          ))}
-        </Box>
-
-        {/* STRATEGY ENGINE */}
-        <Box sx={{ bgcolor: ECAM.PANEL, p: 1.2, border: `1px solid ${ECAM.BORDER}` }}>
-          <Typography sx={{ color: ECAM.WHITE, fontSize: '0.6rem', letterSpacing: '0.12em', mb: 0.8, fontWeight: 700 }}>
-            STRATEGY
-          </Typography>
-          {[
-            { label: 'SIGNAL', value: mlMetrics.signalDir === 'buy' ? 'BUY BIAS' : mlMetrics.signalDir === 'sell' ? 'SELL BIAS' : 'HOLD', color: mlMetrics.signalDir === 'buy' ? ECAM.GREEN : mlMetrics.signalDir === 'sell' ? ECAM.RED : ECAM.AMBER },
-            { label: 'REGIME', value: `${(mlMetrics.regimeScore * 100).toFixed(0)}%`, color: ECAM.CYAN },
-            { label: 'POLICY', value: `${history.trainingMetrics.length} steps`, color: ECAM.WHITE },
-          ].map(({ label, value, color }) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
-              <Typography sx={{ color: ECAM.DIM, fontSize: '0.68rem' }}>{label}</Typography>
-              <Typography sx={{ color, fontSize: '0.72rem', fontWeight: 600 }}>{value}</Typography>
-            </Box>
-          ))}
-        </Box>
-      </Box>
+      {/* ═══ PARETO TAIL RISK & DYNAMIC REGIME ═══ */}
+      <ParetoMonitor />
     </Box>
   );
 };

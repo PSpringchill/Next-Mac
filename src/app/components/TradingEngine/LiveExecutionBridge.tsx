@@ -13,9 +13,17 @@ const LiveExecutionBridge = () => {
   const appendRecordedData = useTradingStore((state) => state.appendRecordedData);
   const updateSignal = useTradingStore((state) => state.updateSignal);
   const updateLivePerformance = useTradingStore((state) => state.updateLivePerformance);
+  const updateParetoState = useTradingStore((state) => state.updateParetoState);
+  const updateDynamicRegime = useTradingStore((state) => state.updateDynamicRegime);
+  const updateSignalFilter = useTradingStore((state) => state.updateSignalFilter);
 
-  const paperEngineRef = useRef(new PaperTradingEngine());
+  const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const lastUpdateRef = useRef(0);
+
+  // Lazy init to avoid double-construction in React strict mode
+  if (!paperEngineRef.current) {
+    paperEngineRef.current = new PaperTradingEngine();
+  }
 
   const marketData = useMemo(() => {
     const orderBook = orderBookContext?.orderBookData;
@@ -44,10 +52,27 @@ const LiveExecutionBridge = () => {
       appendRecordedData(marketData);
     }
 
-    if (!isExecutionEnabled) return;
+    const engine = paperEngineRef.current;
+    if (!engine) return;
 
-    if (executionMode === 'paper') {
-      paperEngineRef.current.processTick(marketData).then((result) => {
+    // Async IIFE: feedMonitoringData is now async (awaits HMM detectRegime)
+    (async () => {
+      // Always feed Pareto, regime & signal filter monitoring (independent of execution state)
+      const monitoring = await engine.feedMonitoringData(marketData);
+      if (monitoring.pareto) {
+        updateParetoState(monitoring.pareto);
+      }
+      if (monitoring.regime) {
+        updateDynamicRegime(monitoring.regime);
+      }
+      if (monitoring.signalFilter) {
+        updateSignalFilter(monitoring.signalFilter);
+      }
+
+      if (!isExecutionEnabled) return;
+
+      if (executionMode === 'paper') {
+        const result = await engine.processTick(marketData);
         updateSignal(result.signal);
         updateLivePerformance({
           pnl: result.portfolio.dailyPnl,
@@ -56,19 +81,22 @@ const LiveExecutionBridge = () => {
             ? result.trades.filter((trade) => (trade.pnl ?? 0) > 0).length / result.trades.length
             : 0
         });
-      });
-      return;
-    }
+        if (result.signalFilter) {
+          updateSignalFilter(result.signalFilter);
+        }
+        return;
+      }
 
-    // Live mode placeholder: no exchange wiring yet
-    updateSignal({
-      direction: 0,
-      strength: 0,
-      confidence: 0,
-      timestamp: Date.now(),
-      metadata: { status: 'live_mode_pending' }
-    });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance]);
+      // Live mode placeholder: no exchange wiring yet
+      updateSignal({
+        direction: 0,
+        strength: 0,
+        confidence: 0,
+        timestamp: Date.now(),
+        metadata: { status: 'live_mode_pending' }
+      });
+    })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err));
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter]);
 
   return null;
 };

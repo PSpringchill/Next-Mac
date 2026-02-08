@@ -10,6 +10,9 @@ import {
   MarketData,
   Trade
 } from '@tradingEngine/types';
+import type { ParetoState } from '../app/components/TradingEngine/ParetoAnalyzer';
+import type { RegimeResult } from '../app/components/TradingEngine/DynamicThresholds';
+import type { SignalFilterState } from '../app/components/TradingEngine/PaperTradingEngine';
 
 interface TradingState {
   // Current market data
@@ -47,7 +50,14 @@ interface TradingState {
     };
   } | null;
   stressResults: Array<{ scenario: string; trades: Trade[]; maxDrawdown: number; finalPnl: number }> | null;
-  
+
+  // Pareto & Dynamic Regime
+  paretoState: ParetoState | null;
+  dynamicRegime: RegimeResult | null;
+  paretoHistory: Array<{ alpha: number; tailRisk: number; timestamp: number }>;
+
+  // MCML: Signal Filter (Gradient Surprise + HMM)
+  signalFilter: SignalFilterState | null;
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -63,6 +73,9 @@ interface TradingState {
   appendRecordedData: (data: MarketData) => void;
   setEvaluationResults: (results: TradingState['evaluationResults']) => void;
   setStressResults: (results: TradingState['stressResults']) => void;
+  updateParetoState: (pareto: ParetoState) => void;
+  updateDynamicRegime: (regime: RegimeResult) => void;
+  updateSignalFilter: (filter: SignalFilterState) => void;
   reset: () => void;
 }
 
@@ -84,7 +97,11 @@ const initialState = {
   recordingEnabled: false,
   recordedData: [],
   evaluationResults: null,
-  stressResults: null
+  stressResults: null,
+  paretoState: null,
+  dynamicRegime: null,
+  paretoHistory: [],
+  signalFilter: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -148,6 +165,27 @@ export const useTradingStore = create<TradingState>()(
 
     setStressResults: (results) => set((state) => {
       state.stressResults = results;
+    }),
+
+    updateParetoState: (pareto) => set((state) => {
+      state.paretoState = pareto as any;
+      // Keep last 100 history points for dashboard chart
+      state.paretoHistory.push({
+        alpha: pareto.params.alpha,
+        tailRisk: pareto.params.tailRisk,
+        timestamp: pareto.timestamp,
+      });
+      if (state.paretoHistory.length > 100) {
+        state.paretoHistory.shift();
+      }
+    }),
+
+    updateDynamicRegime: (regime) => set((state) => {
+      state.dynamicRegime = regime as any;
+    }),
+
+    updateSignalFilter: (filter) => set((state) => {
+      state.signalFilter = JSON.parse(JSON.stringify(filter));
     }),
     
     reset: () => set(() => initialState)
