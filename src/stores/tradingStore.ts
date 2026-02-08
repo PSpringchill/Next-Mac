@@ -42,13 +42,14 @@ interface TradingState {
   evaluationResults: {
     bestParams: { tpPct: number; slPct: number; entryObi: number; score: number };
     bestMetrics: BacktestResult;
+    bestDirectional: { buyTrades: number; buyWins: number; buyWinRate: number; sellTrades: number; sellWins: number; sellWinRate: number };
     delta: {
       totalReturn: number;
       sharpeRatio: number;
       maxDrawdown: number;
       winRate: number;
     };
-    top5: Array<{ params: { tpPct: number; slPct: number; entryObi: number }; metrics: BacktestResult; score: number }>;
+    top5: Array<{ params: { tpPct: number; slPct: number; entryObi: number }; metrics: BacktestResult; directional: { buyTrades: number; buyWins: number; buyWinRate: number; sellTrades: number; sellWins: number; sellWinRate: number }; score: number }>;
     totalCombinations: number;
     elapsed: number;
   } | null;

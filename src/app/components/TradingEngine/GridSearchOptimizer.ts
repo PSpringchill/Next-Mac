@@ -15,9 +15,19 @@ export interface GridSearchResult {
   elapsed: number;
 }
 
+export interface DirectionalStats {
+  buyTrades: number;
+  buyWins: number;
+  buyWinRate: number;
+  sellTrades: number;
+  sellWins: number;
+  sellWinRate: number;
+}
+
 export interface GridCellResult {
   params: GridParams;
   metrics: BacktestResult;
+  directional: DirectionalStats;
   score: number;
 }
 
@@ -73,7 +83,7 @@ function runTPSLBacktest(data: MarketData[], params: GridParams): BacktestResult
       ? entryPrice * (1 - slPct / 100)
       : entryPrice * (1 + slPct / 100);
 
-    // Record BUY entry
+    // Record entry
     trades.push({
       type: direction === 1 ? 'BUY' : 'SELL',
       price: entryPrice,
@@ -123,6 +133,34 @@ function runTPSLBacktest(data: MarketData[], params: GridParams): BacktestResult
   }
 
   return calculateMetrics(trades, capital, initialCapital);
+}
+
+function calculateDirectionalStats(trades: Trade[]): DirectionalStats {
+  let buyTrades = 0, buyWins = 0, sellTrades = 0, sellWins = 0;
+
+  // Trades come in entry/exit pairs
+  for (let i = 0; i < trades.length - 1; i += 2) {
+    const entry = trades[i];
+    const exit = trades[i + 1];
+    if (!exit) break;
+
+    if (entry.type === 'BUY') {
+      buyTrades++;
+      if ((exit.pnl ?? 0) > 0) buyWins++;
+    } else {
+      sellTrades++;
+      if ((exit.pnl ?? 0) > 0) sellWins++;
+    }
+  }
+
+  return {
+    buyTrades,
+    buyWins,
+    buyWinRate: buyTrades > 0 ? buyWins / buyTrades : 0,
+    sellTrades,
+    sellWins,
+    sellWinRate: sellTrades > 0 ? sellWins / sellTrades : 0,
+  };
 }
 
 function calculateMetrics(trades: Trade[], finalCapital: number, initialCapital: number): BacktestResult {
@@ -207,8 +245,9 @@ class GridSearchOptimizer {
         for (const entryObi of this.ranges.entryObis) {
           const params: GridParams = { tpPct, slPct, entryObi };
           const metrics = runTPSLBacktest(data, params);
+          const directional = calculateDirectionalStats(metrics.trades);
           const score = scoreResult(metrics);
-          results.push({ params, metrics, score });
+          results.push({ params, metrics, directional, score });
         }
       }
     }

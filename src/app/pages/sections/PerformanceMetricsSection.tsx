@@ -66,6 +66,7 @@ const PerformanceMetricsSection: React.FC = () => {
       setEvaluationResults({
         bestParams: result.bestParams,
         bestMetrics: result.bestMetrics,
+        bestDirectional: result.bestDirectional,
         delta: result.delta,
         top5: result.top5,
         totalCombinations: result.gridSearch.totalCombinations,
@@ -247,6 +248,32 @@ const PerformanceMetricsSection: React.FC = () => {
                       <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)' }}>Win Rate</Typography>
                       <Typography sx={{ color: '#ffffff', fontWeight: 700 }}>
                         {(evaluationResults.bestMetrics.winRate * 100).toFixed(1)}%
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Directional Breakdown */}
+                  <Box sx={{ display: 'flex', gap: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1, p: 1.2 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" sx={{ color: '#00ff88', fontWeight: 700, letterSpacing: '0.06em' }}>
+                        BUY
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', display: 'block' }}>
+                        {evaluationResults.bestDirectional.buyWins}/{evaluationResults.bestDirectional.buyTrades} wins
+                      </Typography>
+                      <Typography sx={{ color: '#00ff88', fontWeight: 800, fontSize: '1rem' }}>
+                        {(evaluationResults.bestDirectional.buyWinRate * 100).toFixed(0)}%
+                      </Typography>
+                    </Box>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="caption" sx={{ color: '#ff4444', fontWeight: 700, letterSpacing: '0.06em' }}>
+                        SELL
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', display: 'block' }}>
+                        {evaluationResults.bestDirectional.sellWins}/{evaluationResults.bestDirectional.sellTrades} wins
+                      </Typography>
+                      <Typography sx={{ color: '#ff4444', fontWeight: 800, fontSize: '1rem' }}>
+                        {(evaluationResults.bestDirectional.sellWinRate * 100).toFixed(0)}%
                       </Typography>
                     </Box>
                   </Box>

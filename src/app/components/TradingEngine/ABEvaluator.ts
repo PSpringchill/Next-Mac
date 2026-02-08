@@ -1,11 +1,12 @@
 import { MarketData, BacktestResult } from '@tradingEngine/types';
-import GridSearchOptimizer, { GridSearchResult, GridParams } from './GridSearchOptimizer';
+import GridSearchOptimizer, { GridSearchResult, GridParams, DirectionalStats } from './GridSearchOptimizer';
 
 export interface ABResult {
   // Grid search results (replaces old baseline/MDP approach)
   gridSearch: GridSearchResult;
   bestParams: GridParams & { score: number };
   bestMetrics: BacktestResult;
+  bestDirectional: DirectionalStats;
   // Summary deltas (best vs median for quick display)
   delta: {
     totalReturn: number;
@@ -14,7 +15,7 @@ export interface ABResult {
     winRate: number;
   };
   // Top 5 parameter sets for comparison
-  top5: Array<{ params: GridParams; metrics: BacktestResult; score: number }>;
+  top5: Array<{ params: GridParams; metrics: BacktestResult; directional: DirectionalStats; score: number }>;
 }
 
 class ABEvaluator {
@@ -37,6 +38,7 @@ class ABEvaluator {
       gridSearch,
       bestParams: gridSearch.best,
       bestMetrics: gridSearch.bestMetrics,
+      bestDirectional: gridSearch.all[0]?.directional ?? { buyTrades: 0, buyWins: 0, buyWinRate: 0, sellTrades: 0, sellWins: 0, sellWinRate: 0 },
       delta: {
         totalReturn: gridSearch.bestMetrics.totalReturn - median.totalReturn,
         sharpeRatio: gridSearch.bestMetrics.sharpeRatio - median.sharpeRatio,
