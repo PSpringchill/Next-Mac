@@ -121,6 +121,7 @@ class PaperTradingEngine extends EventEmitter {
       bufferSize: 500,
       minDataPoints: 100,
       cooldownTicks: 50,
+      fallbackInterval: 200,
       sharpeThreshold: 1.0,
       winRateThreshold: 0.50,
     });

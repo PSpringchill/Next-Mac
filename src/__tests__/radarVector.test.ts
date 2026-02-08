@@ -34,17 +34,34 @@ describe('RadarVector', () => {
     expect(state.dataPoints).toBeLessThanOrEqual(50);
   });
 
-  it('does NOT run search when allConditionsMet is false', () => {
+  it('does NOT run search when allConditionsMet is false and within fallback interval', () => {
     const rv = new RadarVector({
       bufferSize: 200,
       minDataPoints: 30,
       cooldownTicks: 10,
+      fallbackInterval: 9999, // disable fallback for this test
     });
     // Feed 60 ticks but never signal conditions met
     for (let i = 0; i < 60; i++) {
       rv.feed(makeTick(100 + Math.sin(i * 0.2) * 3, 10, 10), false);
     }
     expect(rv.getState().searchCount).toBe(0);
+  });
+
+  it('runs search via fallback when allConditionsMet stays false long enough', () => {
+    const rv = new RadarVector({
+      bufferSize: 300,
+      minDataPoints: 30,
+      cooldownTicks: 10,
+      fallbackInterval: 50,
+    });
+    // Feed 55 ticks without conditions met — exceeds fallbackInterval
+    for (let i = 0; i < 55; i++) {
+      rv.feed(makeTick(100 + Math.sin(i * 0.2) * 3, 10 + i % 5, 8 + i % 3), false);
+    }
+    const state = rv.getState();
+    expect(state.searchCount).toBeGreaterThanOrEqual(1);
+    expect(['ESTABLISH', 'NO VECTOR']).toContain(state.status);
   });
 
   it('runs grid search when allConditionsMet is true and data is sufficient', () => {
@@ -129,6 +146,7 @@ describe('RadarVector', () => {
     expect(config.bufferSize).toBe(500);
     expect(config.minDataPoints).toBe(100);
     expect(config.cooldownTicks).toBe(50);
+    expect(config.fallbackInterval).toBe(200);
     expect(config.sharpeThreshold).toBe(1.0);
     expect(config.winRateThreshold).toBe(0.50);
   });
@@ -156,6 +174,7 @@ describe('RadarVector', () => {
       bufferSize: 200,
       minDataPoints: 30,
       cooldownTicks: 20,
+      fallbackInterval: 9999,
     });
     // Feed 35 ticks then trigger first search
     for (let i = 0; i < 35; i++) {

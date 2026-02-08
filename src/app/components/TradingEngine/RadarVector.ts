@@ -25,6 +25,7 @@ export interface RadarVectorConfig {
   bufferSize: number;          // Max market data ticks to retain (default 500)
   minDataPoints: number;       // Minimum ticks before first grid search (default 100)
   cooldownTicks: number;       // Min ticks between searches (prevents rapid re-fires)
+  fallbackInterval: number;    // Max ticks before forced search regardless of conditions
   sharpeThreshold: number;     // Minimum Sharpe to ESTABLISH (default 1.0)
   winRateThreshold: number;    // Minimum WinRate to ESTABLISH (default 0.50)
 }
@@ -33,6 +34,7 @@ const DEFAULT_CONFIG: RadarVectorConfig = {
   bufferSize: 500,
   minDataPoints: 100,
   cooldownTicks: 50,
+  fallbackInterval: 200,
   sharpeThreshold: 1.0,
   winRateThreshold: 0.50,
 };
@@ -121,13 +123,17 @@ class RadarVector {
     this.state.dataPoints = this.dataBuffer.length;
     this.state.timestamp = Date.now();
 
-    // Trigger search when: all ensemble technical conditions met,
-    // enough data collected, and cooldown elapsed since last search
+    // Trigger search when enough data and cooldown elapsed.
+    // Preferred: fire when allConditionsMet (ensemble gates passed).
+    // Fallback:  fire anyway after fallbackInterval ticks to avoid staying SCANNING.
+    const hasEnoughData = this.dataBuffer.length >= this.config.minDataPoints;
+    const cooldownReady = this.ticksSinceLastSearch >= this.config.cooldownTicks;
+    const fallbackReady = this.ticksSinceLastSearch >= this.config.fallbackInterval;
+
     if (
-      allConditionsMet
-      && !this.isSearching
-      && this.dataBuffer.length >= this.config.minDataPoints
-      && this.ticksSinceLastSearch >= this.config.cooldownTicks
+      !this.isSearching
+      && hasEnoughData
+      && (allConditionsMet && cooldownReady || fallbackReady)
     ) {
       this.runSearch();
     }
@@ -166,28 +172,7 @@ class RadarVector {
       this.state.winRate = metrics.winRate;
       this.state.totalReturn = metrics.totalReturn;
 
-      // Extract dominant trade side from best result's directional stats
-      const bestCell = result.all.find(c =>
-        c.params.tpPct === best.tpPct && c.params.slPct === best.slPct && c.params.entryObi === best.entryObi
-      );
-      if (bestCell) {
-        const d = bestCell.directional;
-        this.state.buyWinRate = d.buyWinRate;
-        this.state.sellWinRate = d.sellWinRate;
-        this.state.buyTrades = d.buyTrades;
-        this.state.sellTrades = d.sellTrades;
-        if (d.buyTrades + d.sellTrades === 0) {
-          this.state.dominantSide = 'NEUTRAL';
-        } else if (d.buyWinRate > d.sellWinRate + 0.05) {
-          this.state.dominantSide = 'BUY';
-        } else if (d.sellWinRate > d.buyWinRate + 0.05) {
-          this.state.dominantSide = 'SELL';
-        } else {
-          this.state.dominantSide = 'NEUTRAL';
-        }
-      }
-
-      // Determine ESTABLISH status
+      // Determine ESTABLISH status (before directional extraction for safety)
       if (
         metrics.sharpeRatio >= this.config.sharpeThreshold
         && metrics.winRate >= this.config.winRateThreshold
@@ -195,6 +180,31 @@ class RadarVector {
         this.state.status = 'ESTABLISH';
       } else {
         this.state.status = 'NO VECTOR';
+      }
+
+      // Extract dominant trade side from best result's directional stats
+      try {
+        const bestCell = result.all.find(c =>
+          c.params.tpPct === best.tpPct && c.params.slPct === best.slPct && c.params.entryObi === best.entryObi
+        );
+        if (bestCell?.directional) {
+          const d = bestCell.directional;
+          this.state.buyWinRate = d.buyWinRate;
+          this.state.sellWinRate = d.sellWinRate;
+          this.state.buyTrades = d.buyTrades;
+          this.state.sellTrades = d.sellTrades;
+          if (d.buyTrades + d.sellTrades === 0) {
+            this.state.dominantSide = 'NEUTRAL';
+          } else if (d.buyWinRate > d.sellWinRate + 0.05) {
+            this.state.dominantSide = 'BUY';
+          } else if (d.sellWinRate > d.buyWinRate + 0.05) {
+            this.state.dominantSide = 'SELL';
+          } else {
+            this.state.dominantSide = 'NEUTRAL';
+          }
+        }
+      } catch {
+        // Directional stats unavailable — leave defaults
       }
     } catch {
       // Search failed — remain in current state
