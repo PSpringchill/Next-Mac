@@ -1,13 +1,20 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 import { ECAM, VolumeBin } from './ecamTheme';
+import type { RadarVectorState } from '../TradingEngine/RadarVector';
 
 interface AttitudeIndicatorProps {
   volumeProfile: { bins: VolumeBin[]; totalBidVol: number; totalAskVol: number };
   volRoC: number;
+  radarVector?: RadarVectorState | null;
 }
 
-const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC }) => {
+const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC, radarVector }) => {
+  const rv = radarVector;
+  const rvEstablished = rv?.status === 'ESTABLISH';
+  const rvStatusColor = rvEstablished ? ECAM.GREEN
+    : rv?.status === 'SCANNING' ? ECAM.CYAN
+    : rv?.status === 'SEARCHING' ? ECAM.AMBER : ECAM.DIM;
   const acx = 180, acy = 185, ar = 145;
   const tiltDeg = Math.max(-30, Math.min(30, volRoC * 0.6));
   const maxVol = Math.max(1, ...volumeProfile.bins.map(b => Math.max(b.bidVol, b.askVol)));
@@ -17,8 +24,8 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
       <Typography sx={{ color: ECAM.WHITE, fontSize: '0.7rem', letterSpacing: '0.12em', mb: 0.5, fontWeight: 700 }}>
         ATT — VOLUME PROFILE
       </Typography>
-      <svg width="100%" height="100%" viewBox="0 0 420 380" style={{ maxWidth: 420 }}>
-        <rect x="0" y="0" width="420" height="380" fill="rgba(5,5,10,0.9)" rx="4" />
+      <svg width="100%" height="100%" viewBox="0 0 420 400" style={{ maxWidth: 420 }}>
+        <rect x="0" y="0" width="420" height="400" fill="rgba(5,5,10,0.9)" rx="4" />
 
         {/* Attitude circle */}
         <defs>
@@ -110,7 +117,49 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
           </text>
           <text x="377" y="52" textAnchor="middle" fill={ECAM.GREEN} fontSize="8" fontFamily="monospace">BUY</text>
           <text x="377" y="318" textAnchor="middle" fill={ECAM.RED} fontSize="8" fontFamily="monospace">SELL</text>
+
+          {/* TP / SL from Radar Vector */}
+          {rv && rv.searchCount > 0 && (
+            <>
+              <line x1="350" y1="340" x2="405" y2="340" stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+              <text x="377" y="354" textAnchor="middle" fill={rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="7" fontFamily="monospace" fontWeight="bold">TP</text>
+              <text x="377" y="364" textAnchor="middle" fill={rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="10" fontFamily="monospace" fontWeight="bold">
+                {rv.tpPct.toFixed(3)}%
+              </text>
+              <text x="377" y="378" textAnchor="middle" fill={rvEstablished ? ECAM.RED : ECAM.DIM} fontSize="7" fontFamily="monospace" fontWeight="bold">SL</text>
+              <text x="377" y="388" textAnchor="middle" fill={rvEstablished ? ECAM.RED : ECAM.DIM} fontSize="10" fontFamily="monospace" fontWeight="bold">
+                {rv.slPct.toFixed(3)}%
+              </text>
+            </>
+          )}
         </g>
+
+        {/* Radar Vector: OBI & DD overlay (top-left) */}
+        {rv && (
+          <g>
+            {/* Status badge */}
+            <rect x="8" y="8" width={rv.status.length * 7.5 + 12} height="16" rx="3"
+              fill={rvEstablished ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.04)'}
+              stroke={rvStatusColor} strokeWidth="0.8" />
+            <text x="14" y="19" fill={rvStatusColor} fontSize="9" fontFamily="monospace" fontWeight="bold">
+              {rv.status}
+            </text>
+
+            {/* OBI & DD values */}
+            {rv.searchCount > 0 && (
+              <>
+                <text x="12" y="38" fill={ECAM.DIM} fontSize="7" fontFamily="monospace">OBI</text>
+                <text x="12" y="49" fill={rvEstablished ? ECAM.CYAN : ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                  {rv.entryObi.toFixed(1)}%
+                </text>
+                <text x="12" y="62" fill={ECAM.DIM} fontSize="7" fontFamily="monospace">DD</text>
+                <text x="12" y="73" fill={rv.drawdownPct > 5 ? ECAM.AMBER : rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                  {rv.drawdownPct.toFixed(2)}%
+                </text>
+              </>
+            )}
+          </g>
+        )}
 
         {/* Volume summary */}
         <text x="180" y="370" textAnchor="middle" fill={ECAM.DIM} fontSize="10" fontFamily="monospace">

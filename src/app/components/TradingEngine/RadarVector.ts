@@ -1,6 +1,9 @@
 // ─── Radar Vector ─────────────────────────────────────────────────────────────
-// Background Grid Search monitor that collects live market data and periodically
-// runs the GridSearchOptimizer to discover optimal TP/SL/EntryOBI parameters.
+// Background Grid Search monitor that collects live market data and runs
+// GridSearchOptimizer when all ensemble technical conditions are met.
+//
+// Trigger: search fires when allConditionsMet === true AND enough data AND
+//          at least `cooldownTicks` have elapsed since the last search.
 //
 // Status transitions:
 //   SCANNING  → collecting data, not enough for grid search yet
@@ -21,7 +24,7 @@ import GridSearchOptimizer, {
 export interface RadarVectorConfig {
   bufferSize: number;          // Max market data ticks to retain (default 500)
   minDataPoints: number;       // Minimum ticks before first grid search (default 100)
-  searchIntervalTicks: number; // Re-run grid search every N ticks (default 100)
+  cooldownTicks: number;       // Min ticks between searches (prevents rapid re-fires)
   sharpeThreshold: number;     // Minimum Sharpe to ESTABLISH (default 1.0)
   winRateThreshold: number;    // Minimum WinRate to ESTABLISH (default 0.50)
 }
@@ -29,7 +32,7 @@ export interface RadarVectorConfig {
 const DEFAULT_CONFIG: RadarVectorConfig = {
   bufferSize: 500,
   minDataPoints: 100,
-  searchIntervalTicks: 100,
+  cooldownTicks: 50,
   sharpeThreshold: 1.0,
   winRateThreshold: 0.50,
 };
@@ -94,7 +97,7 @@ class RadarVector {
 
   // ─── Feed market data tick ─────────────────────────────────────────────
 
-  feed(marketData: MarketData): RadarVectorState {
+  feed(marketData: MarketData, allConditionsMet: boolean = false): RadarVectorState {
     // Add to rolling buffer
     this.dataBuffer.push(marketData);
     if (this.dataBuffer.length > this.config.bufferSize) {
@@ -105,11 +108,13 @@ class RadarVector {
     this.state.dataPoints = this.dataBuffer.length;
     this.state.timestamp = Date.now();
 
-    // Check if we should run a search
+    // Trigger search when: all ensemble technical conditions met,
+    // enough data collected, and cooldown elapsed since last search
     if (
-      !this.isSearching
+      allConditionsMet
+      && !this.isSearching
       && this.dataBuffer.length >= this.config.minDataPoints
-      && this.ticksSinceLastSearch >= this.config.searchIntervalTicks
+      && this.ticksSinceLastSearch >= this.config.cooldownTicks
     ) {
       this.runSearch();
     }

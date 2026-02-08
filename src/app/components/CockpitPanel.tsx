@@ -22,6 +22,7 @@ const CockpitPanel: React.FC = () => {
   const { mlPrediction, regime, learner, history } = useMLEngine();
   const { portfolioState, status, config } = useRiskManager();
   const paretoState = useTradingStore((s) => s.paretoState);
+  const radarVector = useTradingStore((s) => s.radarVector);
   const [wallRangePct, setWallRangePct] = useState(5);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const wallRangeOptions = [2, 5, 10];
@@ -602,7 +603,7 @@ const CockpitPanel: React.FC = () => {
       }}>
         <Box sx={{ display: 'flex', gap: 2, p: 0.5, alignItems: 'flex-start', justifyContent: 'center' }}>
           <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} />
-          <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} />
+          <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} />
         </Box>
         <FeatureRadar featureWeights={featureWeights} />
       </Box>

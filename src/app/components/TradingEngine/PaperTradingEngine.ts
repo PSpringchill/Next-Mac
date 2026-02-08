@@ -120,7 +120,7 @@ class PaperTradingEngine extends EventEmitter {
     this.radarVector = new RadarVector({
       bufferSize: 500,
       minDataPoints: 100,
-      searchIntervalTicks: 100,
+      cooldownTicks: 50,
       sharpeThreshold: 1.0,
       winRateThreshold: 0.50,
     });
@@ -255,7 +255,9 @@ class PaperTradingEngine extends EventEmitter {
     };
 
     // ─── Feed Radar Vector (background Grid Search) ───────────────────────
-    this.lastRadarVector = this.radarVector.feed(marketData);
+    // Trigger search only when all ensemble technical conditions are met
+    const allTechMet = this.lastEnsemble?.allConditionsMet ?? false;
+    this.lastRadarVector = this.radarVector.feed(marketData, allTechMet);
 
     return {
       pareto: this.lastParetoState ?? undefined,
