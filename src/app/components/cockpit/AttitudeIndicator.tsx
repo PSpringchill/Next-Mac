@@ -2,14 +2,23 @@ import React from 'react';
 import { Box, Typography } from '@mui/material';
 import { ECAM, VolumeBin } from './ecamTheme';
 import type { RadarVectorState } from '../TradingEngine/RadarVector';
+import type { RegimeResult } from '../TradingEngine/DynamicThresholds';
 
 interface AttitudeIndicatorProps {
   volumeProfile: { bins: VolumeBin[]; totalBidVol: number; totalAskVol: number };
   volRoC: number;
   radarVector?: RadarVectorState | null;
+  dynamicRegime?: RegimeResult | null;
 }
 
-const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC, radarVector }) => {
+const REGIME_COLOR: Record<string, string> = {
+  TRENDING: '#00ff88',
+  VOLATILE: '#ff2222',
+  RANGING: '#ffaa00',
+  CALM: '#00ddff',
+};
+
+const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC, radarVector, dynamicRegime }) => {
   const rv = radarVector;
   const rvEstablished = rv?.status === 'ESTABLISH';
   const rvStatusColor = rvEstablished ? ECAM.GREEN
@@ -26,6 +35,22 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
       </Typography>
       <svg width="100%" height="100%" viewBox="0 0 420 400" style={{ maxWidth: 420 }}>
         <rect x="0" y="0" width="420" height="400" fill="rgba(5,5,10,0.9)" rx="4" />
+
+        {/* Dynamic Regime badge — top center */}
+        {dynamicRegime && (
+          <g>
+            <rect x="115" y="4" width="130" height="20" rx="4" fill="rgba(0,0,0,0.7)" stroke={REGIME_COLOR[dynamicRegime.regime] ?? ECAM.DIM} strokeWidth="1.2" />
+            <text x="180" y="17" textAnchor="middle" fill={REGIME_COLOR[dynamicRegime.regime] ?? ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
+              {dynamicRegime.regime}
+            </text>
+            <text x="250" y="17" textAnchor="start" fill={ECAM.DIM} fontSize="9" fontFamily="monospace">
+              {(dynamicRegime.strength * 100).toFixed(0)}%
+            </text>
+            {dynamicRegime.reversalRisk && (
+              <text x="110" y="17" textAnchor="end" fill={ECAM.AMBER} fontSize="9" fontFamily="monospace" fontWeight="bold">REV</text>
+            )}
+          </g>
+        )}
 
         {/* Attitude circle */}
         <defs>

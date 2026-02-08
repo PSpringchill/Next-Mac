@@ -53,17 +53,17 @@ const StatusCard: React.FC<{
     '&:hover': { borderColor: 'rgba(255,255,255,0.12)' },
   }}>
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.8 }}>
-      <Typography sx={{ color: C.WHITE, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.12em' }}>
+      <Typography sx={{ color: C.WHITE, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.12em' }}>
         {title}
       </Typography>
-      <Typography sx={{ color: statusColor, fontSize: '0.55rem', fontWeight: 700 }}>
+      <Typography sx={{ color: statusColor, fontSize: '0.68rem', fontWeight: 700 }}>
         {status}
       </Typography>
     </Box>
     {rows.map(({ label, value, color }) => (
       <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.2 }}>
-        <Typography sx={{ color: C.DIM, fontSize: '0.55rem' }}>{label}</Typography>
-        <Typography sx={{ color: color ?? C.WHITE, fontSize: '0.65rem', fontWeight: 600, fontFamily: 'monospace' }}>
+        <Typography sx={{ color: C.DIM, fontSize: '0.68rem' }}>{label}</Typography>
+        <Typography sx={{ color: color ?? C.WHITE, fontSize: '0.78rem', fontWeight: 600, fontFamily: 'monospace' }}>
           {value}
         </Typography>
       </Box>
@@ -125,12 +125,12 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
     <StyledDrawer variant="persistent" open={open}>
       {/* Active Symbol Display */}
       <Box sx={{ p: 2, pb: 1 }}>
-        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.3)', fontWeight: 700, letterSpacing: '0.1rem' }}>
+        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.3)', fontWeight: 700, letterSpacing: '0.1rem', fontSize: '0.7rem' }}>
           ACTIVE SYMBOL
         </Typography>
         <Typography sx={{
           color: '#00ff88',
-          fontSize: '1.1rem',
+          fontSize: '1.2rem',
           fontWeight: 800,
           fontFamily: 'monospace',
           letterSpacing: '0.05em',
@@ -138,7 +138,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
         }}>
           {context?.symbol || 'COLLECTUSDT'}
         </Typography>
-        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>
+        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.7rem' }}>
           BINANCE FUTURES
         </Typography>
       </Box>
@@ -146,7 +146,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
       <Divider sx={{ bgcolor: 'rgba(255, 255, 255, 0.05)', my: 1 }} />
 
       <Box sx={{ p: 2, pb: 0.5 }}>
-        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.3)', fontWeight: 700, letterSpacing: '0.1rem' }}>
+        <Typography variant="caption" sx={{ color: 'rgba(255, 255, 255, 0.3)', fontWeight: 700, letterSpacing: '0.1rem', fontSize: '0.7rem' }}>
           SYSTEM STATUS
         </Typography>
       </Box>
@@ -226,11 +226,11 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
           }}>
             {/* Header */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.8 }}>
-              <Typography sx={{ color: C.WHITE, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.12em' }}>
+              <Typography sx={{ color: C.WHITE, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.12em' }}>
                 RADAR VECTOR
               </Typography>
               <Typography sx={{
-                color: rvColor, fontSize: '0.55rem', fontWeight: 700,
+                color: rvColor, fontSize: '0.68rem', fontWeight: 700,
                 px: 0.6, py: 0.15,
                 border: `1px solid ${rv.status === 'ESTABLISH' ? C.GREEN : 'rgba(255,255,255,0.1)'}`,
                 borderRadius: 0.5,
@@ -250,7 +250,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
                     transition: 'width 0.3s',
                   }} />
                 </Box>
-                <Typography sx={{ color: C.DIM, fontSize: '0.48rem', mt: 0.2 }}>
+                <Typography sx={{ color: C.DIM, fontSize: '0.6rem', mt: 0.2 }}>
                   Collecting: {rv.dataPoints}/100 ticks
                 </Typography>
               </Box>
@@ -269,23 +269,23 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
                   { label: 'Return', value: (rv.totalReturn * 100).toFixed(3) + '%', color: rv.totalReturn > 0 ? C.GREEN : C.RED },
                 ].map(({ label, value, color }) => (
                   <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.2 }}>
-                    <Typography sx={{ color: C.DIM, fontSize: '0.55rem' }}>{label}</Typography>
-                    <Typography sx={{ color, fontSize: '0.65rem', fontWeight: 600, fontFamily: 'monospace' }}>{value}</Typography>
+                    <Typography sx={{ color: C.DIM, fontSize: '0.68rem' }}>{label}</Typography>
+                    <Typography sx={{ color, fontSize: '0.78rem', fontWeight: 600, fontFamily: 'monospace' }}>{value}</Typography>
                   </Box>
                 ))}
 
                 {/* Dominant side */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.2, mt: 0.3, borderTop: `1px solid ${C.BORDER}`, pt: 0.5 }}>
-                  <Typography sx={{ color: C.DIM, fontSize: '0.55rem' }}>Dominant</Typography>
-                  <Typography sx={{ color: sideColor, fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace' }}>{rv.dominantSide}</Typography>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.68rem' }}>Dominant</Typography>
+                  <Typography sx={{ color: sideColor, fontSize: '0.78rem', fontWeight: 700, fontFamily: 'monospace' }}>{rv.dominantSide}</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.1 }}>
-                  <Typography sx={{ color: C.DIM, fontSize: '0.48rem' }}>BUY {(rv.buyWinRate * 100).toFixed(0)}% ({rv.buyTrades})</Typography>
-                  <Typography sx={{ color: C.DIM, fontSize: '0.48rem' }}>SELL {(rv.sellWinRate * 100).toFixed(0)}% ({rv.sellTrades})</Typography>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.6rem' }}>BUY {(rv.buyWinRate * 100).toFixed(0)}% ({rv.buyTrades})</Typography>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.6rem' }}>SELL {(rv.sellWinRate * 100).toFixed(0)}% ({rv.sellTrades})</Typography>
                 </Box>
 
                 {/* Search metadata */}
-                <Typography sx={{ color: C.DIM, fontSize: '0.42rem', mt: 0.5 }}>
+                <Typography sx={{ color: C.DIM, fontSize: '0.55rem', mt: 0.5 }}>
                   #{rv.searchCount} | {rv.totalCombinations} combos | {rv.lastSearchMs.toFixed(0)}ms | {rv.dataPoints} pts
                 </Typography>
               </>

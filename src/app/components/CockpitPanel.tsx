@@ -23,6 +23,7 @@ const CockpitPanel: React.FC = () => {
   const { portfolioState, status, config } = useRiskManager();
   const paretoState = useTradingStore((s) => s.paretoState);
   const radarVector = useTradingStore((s) => s.radarVector);
+  const dynamicRegime = useTradingStore((s) => s.dynamicRegime);
   const [wallRangePct, setWallRangePct] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('speedTapeScale');
@@ -625,7 +626,7 @@ const CockpitPanel: React.FC = () => {
       }}>
         <Box sx={{ display: 'flex', gap: 2, p: 0.5, alignItems: 'flex-start', justifyContent: 'center' }}>
           <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} radarVector={radarVector} onScaleUp={handleScaleUp} onScaleDown={handleScaleDown} />
-          <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} />
+          <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} />
         </Box>
         <FeatureRadar featureWeights={featureWeights} />
       </Box>
