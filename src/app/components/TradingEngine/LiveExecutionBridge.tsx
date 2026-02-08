@@ -18,6 +18,7 @@ const LiveExecutionBridge = () => {
   const updateParetoState = useTradingStore((state) => state.updateParetoState);
   const updateDynamicRegime = useTradingStore((state) => state.updateDynamicRegime);
   const updateSignalFilter = useTradingStore((state) => state.updateSignalFilter);
+  const updateRadarVector = useTradingStore((state) => state.updateRadarVector);
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const lastUpdateRef = useRef(0);
@@ -73,6 +74,9 @@ const LiveExecutionBridge = () => {
       if (monitoring.signalFilter) {
         updateSignalFilter(monitoring.signalFilter);
       }
+      if (monitoring.radarVector) {
+        updateRadarVector(monitoring.radarVector);
+      }
 
       if (!isExecutionEnabled) return;
 
@@ -102,7 +106,7 @@ const LiveExecutionBridge = () => {
       });
     })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
       .finally(() => { processingRef.current = false; });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter]);
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector]);
 
   return null;
 };

@@ -26,6 +26,7 @@ import type { KalmanState } from './KalmanTrendFilter';
 import type { LinRegState } from './LinearRegressionTarget';
 import type { NaiveBayesState } from './NaiveBayesRegime';
 import type { MarketRegime } from '@tradingEngine/types';
+import RadarVector, { type RadarVectorState } from './RadarVector';
 
 export interface SignalFilterState {
   hmmRegime: string;               // Current HMM regime name
@@ -96,6 +97,10 @@ class PaperTradingEngine extends EventEmitter {
   private lastEnsemble: EnsembleResult | null = null;
   private lastExitSignal: ExitSignal | null = null;
 
+  // Radar Vector: Background Grid Search monitor
+  private radarVector: RadarVector;
+  private lastRadarVector: RadarVectorState | null = null;
+
   constructor(
     engine: { processMarketData: TradingEngine['processMarketData'] } = new TradingEngine(),
     riskManager: RiskManager = new RiskManager()
@@ -112,6 +117,13 @@ class PaperTradingEngine extends EventEmitter {
     this.gradientMonitor = new GradientSurpriseMonitor(50, 0.6, 0.85);
     this.featureExtractor = new Level2FeatureExtractor();
     this.hmmRegimeDetector = new HiddenMarkovModel();
+    this.radarVector = new RadarVector({
+      bufferSize: 500,
+      minDataPoints: 100,
+      searchIntervalTicks: 100,
+      sharpeThreshold: 1.0,
+      winRateThreshold: 0.50,
+    });
     this.ensembleGenerator = new EnsembleSignalGenerator({
       riskPerTrade: 0.02,
       maxDrawdown: 0.05,
@@ -139,7 +151,7 @@ class PaperTradingEngine extends EventEmitter {
   }
 
   // ─── Feed analyzers only (no trade execution) for always-on monitoring ─────
-  async feedMonitoringData(marketData: MarketData): Promise<{ pareto?: ParetoState; regime?: RegimeResult; signalFilter?: SignalFilterState }> {
+  async feedMonitoringData(marketData: MarketData): Promise<{ pareto?: ParetoState; regime?: RegimeResult; signalFilter?: SignalFilterState; radarVector?: RadarVectorState }> {
     // Aggregate into 15m candles
     this.candleAggregator.processTick({
       price: marketData.price,
@@ -242,10 +254,14 @@ class PaperTradingEngine extends EventEmitter {
       ensemble: this.lastEnsemble ?? undefined,
     };
 
+    // ─── Feed Radar Vector (background Grid Search) ───────────────────────
+    this.lastRadarVector = this.radarVector.feed(marketData);
+
     return {
       pareto: this.lastParetoState ?? undefined,
       regime: this.lastRegime ?? undefined,
       signalFilter: this.lastSignalFilter,
+      radarVector: this.lastRadarVector ?? undefined,
     };
   }
 
