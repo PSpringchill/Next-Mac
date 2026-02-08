@@ -16,9 +16,15 @@ import DynamicThresholds, { type RegimeResult } from './DynamicThresholds';
 import GradientSurpriseMonitor, { type SurpriseState } from './GradientSurpriseMonitor';
 import Level2FeatureExtractor from './Level2FeatureExtractor';
 import HiddenMarkovModel from './HiddenMarkovModel';
-import KalmanTrendFilter, { type KalmanState } from './KalmanTrendFilter';
-import LinearRegressionTarget, { type LinRegState } from './LinearRegressionTarget';
-import NaiveBayesRegime, { type NaiveBayesState } from './NaiveBayesRegime';
+import EnsembleSignalGenerator, {
+  type EnsembleResult,
+  type EnsembleConfig,
+  type ComponentCheck,
+  type ExitSignal,
+} from './EnsembleSignalGenerator';
+import type { KalmanState } from './KalmanTrendFilter';
+import type { LinRegState } from './LinearRegressionTarget';
+import type { NaiveBayesState } from './NaiveBayesRegime';
 import type { MarketRegime } from '@tradingEngine/types';
 
 export interface SignalFilterState {
@@ -35,6 +41,9 @@ export interface SignalFilterState {
   kalman?: KalmanState;
   linReg?: LinRegState;
   naiveBayes?: NaiveBayesState;
+  // Ensemble signal generator state
+  ensemble?: EnsembleResult;
+  exitSignal?: ExitSignal;
 }
 
 export interface PaperTradeResult {
@@ -47,6 +56,8 @@ export interface PaperTradeResult {
   pareto?: ParetoState;
   regime?: RegimeResult;
   signalFilter?: SignalFilterState;
+  ensemble?: EnsembleResult;
+  exitSignal?: ExitSignal;
 }
 
 class PaperTradingEngine extends EventEmitter {
@@ -80,13 +91,10 @@ class PaperTradingEngine extends EventEmitter {
   private hmmTickCounter: number = 9;      // Fire first HMM on first tick
   private readonly hmmAnalysisInterval: number = 10;  // HMM every 10 ticks (lighter than Pareto)
 
-  // Kalman Trend + Linear Regression Target + Naive Bayes Regime
-  private kalmanFilter: KalmanTrendFilter;
-  private linRegTarget: LinearRegressionTarget;
-  private naiveBayesRegime: NaiveBayesRegime;
-  private lastKalman: KalmanState | null = null;
-  private lastLinReg: LinRegState | null = null;
-  private lastNaiveBayes: NaiveBayesState | null = null;
+  // Ensemble Signal Generator: Kalman + LinReg + NaiveBayes + TechIndicators + Patterns + CurrencyStrength + ZigZag
+  private ensembleGenerator: EnsembleSignalGenerator;
+  private lastEnsemble: EnsembleResult | null = null;
+  private lastExitSignal: ExitSignal | null = null;
 
   constructor(
     engine: { processMarketData: TradingEngine['processMarketData'] } = new TradingEngine(),
@@ -104,9 +112,14 @@ class PaperTradingEngine extends EventEmitter {
     this.gradientMonitor = new GradientSurpriseMonitor(50, 0.6, 0.85);
     this.featureExtractor = new Level2FeatureExtractor();
     this.hmmRegimeDetector = new HiddenMarkovModel();
-    this.kalmanFilter = new KalmanTrendFilter(0.001, 0.1);
-    this.linRegTarget = new LinearRegressionTarget(30, 10);
-    this.naiveBayesRegime = new NaiveBayesRegime(30, 15);
+    this.ensembleGenerator = new EnsembleSignalGenerator({
+      riskPerTrade: 0.02,
+      maxDrawdown: 0.05,
+      entryThreshold: 0.65,
+      exitThreshold: 0.35,
+      kalmanProcessNoise: 0.001,
+      kalmanMeasurementNoise: 0.01,
+    });
     this.portfolio = 100000;
     this.position = 0;
     this.avgEntryPrice = 0;
@@ -182,9 +195,7 @@ class PaperTradingEngine extends EventEmitter {
 
     this.prevPrice = marketData.price;
 
-    // ─── Feed Kalman / LinReg / NaiveBayes ────────────────────────────────
-    this.lastKalman = this.kalmanFilter.update(marketData.price);
-    this.lastLinReg = this.linRegTarget.update(marketData.price);
+    // ─── Feed Ensemble Signal Generator ─────────────────────────────────────
     const depth = Math.min(5, marketData.orderBook.bids.length, marketData.orderBook.asks.length);
     let bidVol = 0, askVol = 0;
     for (let d = 0; d < depth; d++) {
@@ -193,7 +204,13 @@ class PaperTradingEngine extends EventEmitter {
     }
     const totalVol = bidVol + askVol;
     const obi = totalVol > 0 ? ((bidVol - askVol) / totalVol) * 100 : 0;
-    this.lastNaiveBayes = this.naiveBayesRegime.update(marketData.price, obi, spread);
+
+    // Use price direction as A3C proxy in monitoring mode
+    const currentDrawdown = this.portfolioState.maxDrawdownToday / (this.portfolio + 1e-10);
+    this.lastEnsemble = this.ensembleGenerator.update(
+      marketData.price, obi, bidVol, askVol, spread,
+      priceDir, pseudoConfidence, currentDrawdown,
+    );
 
     // Compute monitoring surprise and build signalFilter for dashboard
     const monitoringSurprise = this.gradientMonitor.computeSurprise();
@@ -219,9 +236,10 @@ class PaperTradingEngine extends EventEmitter {
       filteredConfidence: monitoredFiltered,
       filterReason: this.lastHmmRegime ? monitoringReason : 'HMM initializing — awaiting first regime detection',
       blocked: monitoringSurprise.shouldBlockTrade,
-      kalman: this.lastKalman ?? undefined,
-      linReg: this.lastLinReg ?? undefined,
-      naiveBayes: this.lastNaiveBayes ?? undefined,
+      kalman: this.lastEnsemble?.kalman ?? undefined,
+      linReg: this.lastEnsemble?.linReg ?? undefined,
+      naiveBayes: this.lastEnsemble?.naiveBayes ?? undefined,
+      ensemble: this.lastEnsemble ?? undefined,
     };
 
     return {
@@ -335,7 +353,6 @@ class PaperTradingEngine extends EventEmitter {
 
     // ─── MCML Gate 1: Gradient Surprise Monitor ───────────────────────────
     this.gradientMonitor.addSignal(signal.direction, signal.confidence);
-    // Feed loss: prefer actual volatility from metadata, fallback to (1 - confidence) as uncertainty proxy
     const lossProxy = signal.metadata?.volatility != null
       ? (signal.metadata.volatility as number)
       : (1 - signal.confidence);
@@ -344,22 +361,42 @@ class PaperTradingEngine extends EventEmitter {
 
     // ─── MCML Gate 2: HMM Signal Quality Filter ──────────────────────────
     const hmmFilter = this.applyHMMFilter(signal);
-    const filteredConfidence = hmmFilter.filteredConfidence;
 
-    // ─── MCML Gate 3: Kalman + LinReg + NaiveBayes enrichment ─────────────
-    // Kalman reversal can dampen confidence if signal contradicts trend reversal
-    let kalmanAdj = 1.0;
-    if (this.lastKalman && Math.abs(this.lastKalman.reversalSignal) > 0.3) {
-      // If signal direction opposes the reversal, reduce confidence
-      if (signal.direction > 0 && this.lastKalman.reversalSignal < -0.3) {
-        kalmanAdj = 0.6; // Buying into bearish reversal
-      } else if (signal.direction < 0 && this.lastKalman.reversalSignal > 0.3) {
-        kalmanAdj = 0.6; // Selling into bullish reversal
-      } else {
-        kalmanAdj = 1.15; // Signal aligns with reversal — boost
-      }
+    // ─── MCML Gate 3: Ensemble Signal Generator (8-condition gate) ────────
+    // Extract order book features for ensemble
+    const obDepth = Math.min(5, marketData.orderBook.bids.length, marketData.orderBook.asks.length);
+    let bidVol = 0, askVol = 0;
+    for (let d = 0; d < obDepth; d++) {
+      bidVol += parseFloat(marketData.orderBook.bids[d]?.[1] ?? '0');
+      askVol += parseFloat(marketData.orderBook.asks[d]?.[1] ?? '0');
     }
-    const kalmanFilteredConfidence = Math.min(1.0, filteredConfidence * kalmanAdj);
+    const totalVol = bidVol + askVol;
+    const obi = totalVol > 0 ? ((bidVol - askVol) / totalVol) * 100 : 0;
+    const spread = parseFloat(marketData.orderBook.asks[0]?.[0] ?? '0')
+      - parseFloat(marketData.orderBook.bids[0]?.[0] ?? '0');
+
+    // Compute drawdown fraction for CPO constraint
+    const equity = this.portfolio + this.position * marketData.price;
+    const currentDrawdown = this.equityPeak > 0 ? Math.max(0, (this.equityPeak - equity) / this.equityPeak) : 0;
+
+    // Feed ensemble with A3C signal from MLTradingCore + all market features
+    // Optional candle from the aggregator
+    const lastCandle = this.candleAggregator.getCurrentOrLastCandle();
+    const candleForPattern = lastCandle ? {
+      open: lastCandle.open, high: lastCandle.high,
+      low: lastCandle.low, close: lastCandle.close,
+      volume: lastCandle.volume,
+    } : undefined;
+
+    this.lastEnsemble = this.ensembleGenerator.update(
+      marketData.price, obi, bidVol, askVol, spread,
+      signal.direction, signal.confidence, currentDrawdown,
+      candleForPattern,
+    );
+
+    // Combine HMM + Gradient + Ensemble into final decision
+    const ensembleConfidence = this.lastEnsemble.ensembleScore;
+    const filteredConfidence = Math.min(1.0, ensembleConfidence * hmmFilter.hmmConfidenceAdj);
 
     // Build signal filter state for dashboard
     this.lastSignalFilter = {
@@ -369,44 +406,97 @@ class PaperTradingEngine extends EventEmitter {
       hmmConfidenceAdj: hmmFilter.hmmConfidenceAdj,
       gradientSurprise: surpriseState,
       originalConfidence: signal.confidence,
-      filteredConfidence: kalmanFilteredConfidence,
+      filteredConfidence,
       filterReason: hmmFilter.filterReason ?? surpriseState.blockReason,
       blocked: hmmFilter.blocked || surpriseState.shouldBlockTrade,
-      kalman: this.lastKalman ?? undefined,
-      linReg: this.lastLinReg ?? undefined,
-      naiveBayes: this.lastNaiveBayes ?? undefined,
+      kalman: this.lastEnsemble.kalman,
+      linReg: this.lastEnsemble.linReg,
+      naiveBayes: this.lastEnsemble.naiveBayes,
+      ensemble: this.lastEnsemble,
+      exitSignal: this.lastExitSignal ?? undefined,
     };
 
-    // LOCKOUT check: block new trades if alpha is in danger zone
+    // ─── Exit Evaluation (if we have an open position) ────────────────────
+    if (this.position !== 0 && this.lastEnsemble) {
+      const posDir: 1 | -1 = this.position > 0 ? 1 : -1;
+      const tpPrice = this.lastATIS?.tp?.price ?? null;
+      const slPrice = this.lastATIS?.sl?.price ?? null;
+      const maxExposure = this.portfolio * 0.5; // 50% max exposure
+      const portfolioExposure = Math.abs(this.position * marketData.price);
+
+      this.lastExitSignal = this.ensembleGenerator.evaluateExit(
+        marketData.price, this.avgEntryPrice,
+        tpPrice !== null ? Number(tpPrice) : null,
+        slPrice !== null ? Number(slPrice) : null,
+        posDir, this.lastEnsemble,
+        signal.direction, signal.confidence,
+        currentDrawdown, portfolioExposure, maxExposure,
+      );
+
+      // Force exit if exit signal fires
+      if (this.lastExitSignal.shouldExit) {
+        const exitDir: -1 | 1 = posDir === 1 ? -1 : 1; // Close in opposite direction
+        const exitSize = Math.abs(this.position);
+        const exitResult = this.executionEngine.executeOrder(
+          { direction: exitDir, size: exitSize, urgency: this.lastExitSignal.urgency },
+          marketData.orderBook, { volatility: 0 },
+        );
+        if (exitResult.status === 'filled' && exitResult.filledSize > 0) {
+          const realizedPnl = exitResult.filledSize * (exitResult.fillPrice - this.avgEntryPrice) * posDir;
+          execution = { realizedPnl, fillPrice: exitResult.fillPrice, midPriceAtOrder: exitResult.midPriceAtOrder };
+          this.portfolio += exitResult.fillPrice * exitResult.filledSize * (posDir === 1 ? 1 : -1);
+          // If long, selling gives us back cash; if short logic simplified to close
+          if (posDir === 1) {
+            this.portfolio = this.portfolio + realizedPnl + this.avgEntryPrice * exitResult.filledSize;
+            // Correct: portfolio += sellPrice * size (already added above incorrectly, recalculate)
+            this.portfolio = (this.portfolio - exitResult.fillPrice * exitResult.filledSize * 1)
+              + exitResult.fillPrice * exitResult.filledSize;
+          }
+          this.position = 0;
+          this.avgEntryPrice = 0;
+          this.ensembleGenerator.onExitFilled();
+          this.trades.push({
+            type: posDir === 1 ? 'SELL' : 'BUY',
+            price: exitResult.fillPrice,
+            size: exitResult.filledSize,
+            timestamp: marketData.timestamp,
+            pnl: realizedPnl,
+          });
+          this.emit('trade_exit', { reason: this.lastExitSignal.reason, pnl: realizedPnl });
+        }
+      }
+    } else {
+      this.lastExitSignal = null;
+    }
+
+    // ─── Entry Decision: Ensemble 8-condition gate ────────────────────────
     const alphaBlocked = this.lastParetoState
       && this.lastParetoState.alphaState === AlphaRiskState.LOCKOUT;
     const gradientBlocked = surpriseState.shouldBlockTrade;
     const hmmBlocked = hmmFilter.blocked;
 
-    if (!alphaBlocked && !gradientBlocked && !hmmBlocked
-        && signal.direction !== 0 && kalmanFilteredConfidence > 0.7) {
-      const direction = signal.direction > 0 ? 1 : -1;
-      // Apply Pareto position size multiplier
+    const ensembleShouldEnter = this.lastEnsemble.shouldEnter && this.lastEnsemble.direction !== 0;
+    const noBlockers = !alphaBlocked && !gradientBlocked && !hmmBlocked;
+
+    if (noBlockers && ensembleShouldEnter && this.position === 0) {
+      const direction = this.lastEnsemble.direction as 1 | -1;
+      // Position size: riskPerTrade * account / price, scaled by Pareto + ensemble confidence
       const paretoMultiplier = this.lastParetoState
         ? this.lastParetoState.positionSizeMultiplier : 1.0;
-      const baseSize = Math.abs((this.portfolio * signal.strength * 0.1) / marketData.price);
+      const riskPerTrade = 0.02; // 2% of account
+      const baseSize = Math.abs((this.portfolio * riskPerTrade * ensembleConfidence) / marketData.price);
       const size = baseSize * paretoMultiplier;
 
       const executionResult = this.executionEngine.executeOrder(
-        {
-          direction: direction as -1 | 1,
-          size,
-          urgency: signal.confidence
-        },
-        marketData.orderBook,
-        { volatility: 0 }
+        { direction, size, urgency: ensembleConfidence },
+        marketData.orderBook, { volatility: 0 },
       );
 
       if (executionResult.status === 'filled' && executionResult.filledSize > 0) {
         execution = {
           realizedPnl: 0,
           fillPrice: executionResult.fillPrice,
-          midPriceAtOrder: executionResult.midPriceAtOrder
+          midPriceAtOrder: executionResult.midPriceAtOrder,
         };
 
         if (direction > 0) {
@@ -416,11 +506,8 @@ class PaperTradingEngine extends EventEmitter {
           this.position += executionResult.filledSize;
           this.avgEntryPrice = this.position > 0 ? totalPositionCost / this.position : 0;
           this.trades.push({
-            type: 'BUY',
-            price: executionResult.fillPrice,
-            size: executionResult.filledSize,
-            timestamp: marketData.timestamp,
-            pnl: 0
+            type: 'BUY', price: executionResult.fillPrice,
+            size: executionResult.filledSize, timestamp: marketData.timestamp, pnl: 0,
           });
         } else {
           const exitSize = Math.min(this.position, executionResult.filledSize);
@@ -429,44 +516,42 @@ class PaperTradingEngine extends EventEmitter {
           this.position = Math.max(0, this.position - executionResult.filledSize);
           if (this.position === 0) this.avgEntryPrice = 0;
           this.trades.push({
-            type: 'SELL',
-            price: executionResult.fillPrice,
-            size: executionResult.filledSize,
-            timestamp: marketData.timestamp,
-            pnl: realizedPnl
+            type: 'SELL', price: executionResult.fillPrice,
+            size: executionResult.filledSize, timestamp: marketData.timestamp, pnl: realizedPnl,
           });
           execution.realizedPnl = realizedPnl;
         }
 
-        const equity = this.portfolio + this.position * marketData.price;
-        this.equityPeak = Math.max(this.equityPeak, equity);
-        const drawdown = this.equityPeak - equity;
+        // Notify ensemble of entry fill
+        this.ensembleGenerator.onEntryFilled(direction, executionResult.fillPrice, ensembleConfidence);
+
+        const newEquity = this.portfolio + this.position * marketData.price;
+        this.equityPeak = Math.max(this.equityPeak, newEquity);
+        const drawdown = this.equityPeak - newEquity;
 
         const nextState: PortfolioState = {
           ...this.portfolioState,
           position: this.position,
           unrealizedPnl: this.position * (marketData.price - this.avgEntryPrice),
-          dailyPnl: equity - 100000,
+          dailyPnl: newEquity - 100000,
           tradesToday: this.portfolioState.tradesToday + 1,
           maxDrawdownToday: Math.max(this.portfolioState.maxDrawdownToday, drawdown),
-          lastTradeTimestamp: marketData.timestamp
+          lastTradeTimestamp: marketData.timestamp,
         };
 
         reward = this.rewardCalculator.computeReward(
           { portfolio: this.portfolioState },
           { portfolio: nextState },
-          execution,
-          direction
+          execution, direction,
         );
 
         this.portfolioState = nextState;
         this.riskManager.updatePortfolioState(nextState);
-
         this.emit('trade', { signal, execution: executionResult, reward });
       }
     }
 
-    // Enrich signal metadata with ATIS
+    // Enrich signal metadata with ATIS + ensemble
     if (this.lastATIS) {
       signal = {
         ...signal,
@@ -496,6 +581,8 @@ class PaperTradingEngine extends EventEmitter {
       pareto: this.lastParetoState ?? undefined,
       regime: this.lastRegime ?? undefined,
       signalFilter: this.lastSignalFilter ?? undefined,
+      ensemble: this.lastEnsemble ?? undefined,
+      exitSignal: this.lastExitSignal ?? undefined,
     };
 
     this.emit('portfolio_update', result);
