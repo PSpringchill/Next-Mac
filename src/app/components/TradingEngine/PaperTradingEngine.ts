@@ -444,14 +444,8 @@ class PaperTradingEngine extends EventEmitter {
         if (exitResult.status === 'filled' && exitResult.filledSize > 0) {
           const realizedPnl = exitResult.filledSize * (exitResult.fillPrice - this.avgEntryPrice) * posDir;
           execution = { realizedPnl, fillPrice: exitResult.fillPrice, midPriceAtOrder: exitResult.midPriceAtOrder };
-          this.portfolio += exitResult.fillPrice * exitResult.filledSize * (posDir === 1 ? 1 : -1);
-          // If long, selling gives us back cash; if short logic simplified to close
-          if (posDir === 1) {
-            this.portfolio = this.portfolio + realizedPnl + this.avgEntryPrice * exitResult.filledSize;
-            // Correct: portfolio += sellPrice * size (already added above incorrectly, recalculate)
-            this.portfolio = (this.portfolio - exitResult.fillPrice * exitResult.filledSize * 1)
-              + exitResult.fillPrice * exitResult.filledSize;
-          }
+          // Close position: for long, sell proceeds; for short, buy-to-cover
+          this.portfolio += exitResult.fillPrice * exitResult.filledSize;
           this.position = 0;
           this.avgEntryPrice = 0;
           this.ensembleGenerator.onExitFilled();
