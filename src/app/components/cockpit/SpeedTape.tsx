@@ -93,8 +93,9 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
 
   // TP / SL price-level markers from Radar Vector (render before price so price is on top)
   if (rv && rv.searchCount > 0 && rv.tpPct > 0) {
-    const tpPrice = mid * (1 + rv.tpPct / 100);
-    const slPrice = mid * (1 - rv.slPct / 100);
+    const isSell = rv.dominantSide === 'SELL';
+    const tpPrice = isSell ? mid * (1 - rv.tpPct / 100) : mid * (1 + rv.tpPct / 100);
+    const slPrice = isSell ? mid * (1 + rv.slPct / 100) : mid * (1 - rv.slPct / 100);
     const tpY = priceToY(tpPrice);
     const slY = priceToY(slPrice);
     const tpColor = rvEstablished ? ECAM.GREEN : ECAM.DIM;
