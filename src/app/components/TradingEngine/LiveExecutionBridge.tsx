@@ -1,12 +1,14 @@
 'use client';
 
 import { useContext, useEffect, useMemo, useRef } from 'react';
-import { OrderBookContext } from '../../api/Page';
+import { OrderBookContext, OrderBookContextType } from '../../api/Page';
 import { useTradingStore } from '@stores/tradingStore';
 import PaperTradingEngine from './PaperTradingEngine';
 
+const THROTTLE_MS = 800;
+
 const LiveExecutionBridge = () => {
-  const orderBookContext = useContext(OrderBookContext) as any;
+  const orderBookContext = useContext(OrderBookContext) as OrderBookContextType | null;
   const executionMode = useTradingStore((state) => state.executionMode);
   const isExecutionEnabled = useTradingStore((state) => state.isExecutionEnabled);
   const recordingEnabled = useTradingStore((state) => state.recordingEnabled);
@@ -19,6 +21,7 @@ const LiveExecutionBridge = () => {
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const lastUpdateRef = useRef(0);
+  const processingRef = useRef(false);
 
   // Lazy init to avoid double-construction in React strict mode
   if (!paperEngineRef.current) {
@@ -45,7 +48,8 @@ const LiveExecutionBridge = () => {
     if (!marketData) return;
 
     const now = Date.now();
-    if (now - lastUpdateRef.current < 500) return;
+    if (now - lastUpdateRef.current < THROTTLE_MS) return;
+    if (processingRef.current) return;
     lastUpdateRef.current = now;
 
     if (recordingEnabled) {
@@ -56,6 +60,7 @@ const LiveExecutionBridge = () => {
     if (!engine) return;
 
     // Async IIFE: feedMonitoringData is now async (awaits HMM detectRegime)
+    processingRef.current = true;
     (async () => {
       // Always feed Pareto, regime & signal filter monitoring (independent of execution state)
       const monitoring = await engine.feedMonitoringData(marketData);
@@ -95,7 +100,8 @@ const LiveExecutionBridge = () => {
         timestamp: Date.now(),
         metadata: { status: 'live_mode_pending' }
       });
-    })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err));
+    })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
+      .finally(() => { processingRef.current = false; });
   }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter]);
 
   return null;

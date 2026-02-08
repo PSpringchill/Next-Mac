@@ -10,9 +10,17 @@ const Plot = dynamic(() => import('react-plotly.js'), {
   loading: () => <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)' }}>Loading analytics...</Box>
 });
 
+interface FeatureData {
+  name: string;
+  importance: number;
+  trend: 'up' | 'down';
+  correlation: number;
+  impact: number;
+}
+
 const InteractiveFeatureImportance: React.FC = () => {
   const [showAnimation, setShowAnimation] = useState(true);
-  const [features, setFeatures] = useState<any[]>([]);
+  const [features, setFeatures] = useState<FeatureData[]>([]);
   const { learner, mlPrediction } = useMLEngine();
 
   useEffect(() => {
@@ -27,7 +35,7 @@ const InteractiveFeatureImportance: React.FC = () => {
         return {
           name,
           importance,
-          trend: correlation > 0 ? 'up' : 'down', 
+          trend: (correlation > 0 ? 'up' : 'down') as 'up' | 'down', 
           correlation,
           impact: importance * 100
         };

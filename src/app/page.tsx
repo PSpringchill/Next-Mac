@@ -1,32 +1,9 @@
 'use client';
-import React, { useState, useRef } from 'react';
-import Image from 'next/image';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import Container from '@mui/material/Container';
-import Grid from '@mui/material/Grid';
+import React from 'react';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Card } from './components/MacOsDock/Card/Page';
-import { Dock } from './components/MacOsDock/Dock/Page';
-import { DockCard } from './components/MacOsDock/DockCard/Page';
-import { DockDivider } from './components/MacOsDock/DockDivider/Page';
-import DateTimeCard from './components/DateTimeCard/DateTimeCard';
 import { OrderBookProvider } from './api/Page';
-import MessageHub, { AddFunction } from './notification';
-import { loremIpsum } from 'lorem-ipsum';
 import DashboardLayout from './pages/DashboardLayout';
-
-const GRADIENTS = [
-  './contract1.png',
-  './contract2.png',
-  './data-analysis.png',
-  './report.png',
-  './emotion-recognition.png',
-  './dart-board.png',
-  './illustrator.png',
-];
 
 const darkTheme = createTheme({
   palette: {
