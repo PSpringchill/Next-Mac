@@ -599,6 +599,20 @@ const ParetoMonitor: React.FC = () => {
                 ))}
               </Box>
 
+              {/* Dominant trade side */}
+              <Box sx={{ mt: 0.8, display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
+                <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem' }}>DOMINANT</Typography>
+                <Typography sx={{
+                  color: radarVector.dominantSide === 'BUY' ? ECAM.GREEN : radarVector.dominantSide === 'SELL' ? ECAM.RED : ECAM.AMBER,
+                  fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em',
+                }}>
+                  {radarVector.dominantSide}
+                </Typography>
+                <Typography sx={{ color: ECAM.DIM, fontSize: '0.48rem' }}>
+                  BUY {(radarVector.buyWinRate * 100).toFixed(0)}% ({radarVector.buyTrades}) | SELL {(radarVector.sellWinRate * 100).toFixed(0)}% ({radarVector.sellTrades})
+                </Typography>
+              </Box>
+
               {/* Search metadata */}
               <Box sx={{ mt: 0.8, display: 'flex', justifyContent: 'space-between' }}>
                 <Typography sx={{ color: ECAM.DIM, fontSize: '0.48rem' }}>

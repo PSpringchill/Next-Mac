@@ -26,6 +26,22 @@ const CockpitPanel: React.FC = () => {
   const [wallRangePct, setWallRangePct] = useState(5);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const wallRangeOptions = [2, 5, 10];
+  const scaleSteps = [0.5, 1, 2, 3, 5, 7, 10, 15, 20];
+  const handleScaleUp = useCallback(() => {
+    setWallRangePct(prev => {
+      const idx = scaleSteps.indexOf(prev);
+      return idx > 0 ? scaleSteps[idx - 1] : scaleSteps[0];
+    });
+  }, []);
+  const handleScaleDown = useCallback(() => {
+    setWallRangePct(prev => {
+      const idx = scaleSteps.indexOf(prev);
+      if (idx >= 0 && idx < scaleSteps.length - 1) return scaleSteps[idx + 1];
+      // If current value not in steps, find nearest larger
+      const next = scaleSteps.find(s => s > prev);
+      return next ?? scaleSteps[scaleSteps.length - 1];
+    });
+  }, []);
 
   const orderBook = orderBookContext?.orderBookData ?? null;
 
@@ -602,7 +618,7 @@ const CockpitPanel: React.FC = () => {
         p: 1.5,
       }}>
         <Box sx={{ display: 'flex', gap: 2, p: 0.5, alignItems: 'flex-start', justifyContent: 'center' }}>
-          <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} />
+          <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} radarVector={radarVector} onScaleUp={handleScaleUp} onScaleDown={handleScaleDown} />
           <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} />
         </Box>
         <FeatureRadar featureWeights={featureWeights} />

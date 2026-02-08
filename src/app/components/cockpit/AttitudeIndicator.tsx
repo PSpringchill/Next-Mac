@@ -118,20 +118,6 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
           <text x="377" y="52" textAnchor="middle" fill={ECAM.GREEN} fontSize="8" fontFamily="monospace">BUY</text>
           <text x="377" y="318" textAnchor="middle" fill={ECAM.RED} fontSize="8" fontFamily="monospace">SELL</text>
 
-          {/* TP / SL from Radar Vector */}
-          {rv && rv.searchCount > 0 && (
-            <>
-              <line x1="350" y1="340" x2="405" y2="340" stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
-              <text x="377" y="354" textAnchor="middle" fill={rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="7" fontFamily="monospace" fontWeight="bold">TP</text>
-              <text x="377" y="364" textAnchor="middle" fill={rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="10" fontFamily="monospace" fontWeight="bold">
-                {rv.tpPct.toFixed(3)}%
-              </text>
-              <text x="377" y="378" textAnchor="middle" fill={rvEstablished ? ECAM.RED : ECAM.DIM} fontSize="7" fontFamily="monospace" fontWeight="bold">SL</text>
-              <text x="377" y="388" textAnchor="middle" fill={rvEstablished ? ECAM.RED : ECAM.DIM} fontSize="10" fontFamily="monospace" fontWeight="bold">
-                {rv.slPct.toFixed(3)}%
-              </text>
-            </>
-          )}
         </g>
 
         {/* Radar Vector: OBI & DD overlay (top-left) */}
@@ -155,6 +141,15 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
                 <text x="12" y="62" fill={ECAM.DIM} fontSize="7" fontFamily="monospace">DD</text>
                 <text x="12" y="73" fill={rv.drawdownPct > 5 ? ECAM.AMBER : rvEstablished ? ECAM.GREEN : ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
                   {rv.drawdownPct.toFixed(2)}%
+                </text>
+                {/* Dominant trade side */}
+                <text x="12" y="90" fill={ECAM.DIM} fontSize="7" fontFamily="monospace">SIDE</text>
+                <text x="12" y="101" fill={
+                  rv.dominantSide === 'BUY' ? ECAM.GREEN
+                  : rv.dominantSide === 'SELL' ? ECAM.RED
+                  : ECAM.AMBER
+                } fontSize="11" fontFamily="monospace" fontWeight="bold">
+                  {rv.dominantSide}
                 </text>
               </>
             )}

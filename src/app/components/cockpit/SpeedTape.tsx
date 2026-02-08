@@ -1,14 +1,20 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, IconButton } from '@mui/material';
 import { ECAM, SmoothedTechData } from './ecamTheme';
+import type { RadarVectorState } from '../TradingEngine/RadarVector';
 
 interface SpeedTapeProps {
   smoothedTech: SmoothedTechData;
   wallRangePct: number;
   priceRoC: number;
+  radarVector?: RadarVectorState | null;
+  onScaleUp?: () => void;
+  onScaleDown?: () => void;
 }
 
-const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC }) => {
+const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC, radarVector, onScaleUp, onScaleDown }) => {
+  const rv = radarVector;
+  const rvEstablished = rv?.status === 'ESTABLISH';
   const mid = smoothedTech.midPrice;
   const rangePct = wallRangePct / 100;
   const tapeRange = mid * rangePct;
@@ -96,6 +102,27 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
     </g>
   );
 
+  // TP / SL price-level markers from Radar Vector
+  if (rv && rv.searchCount > 0 && rv.tpPct > 0) {
+    const tpPrice = mid * (1 + rv.tpPct / 100);
+    const slPrice = mid * (1 - rv.slPct / 100);
+    const tpY = priceToY(tpPrice);
+    const slY = priceToY(slPrice);
+    const tpColor = rvEstablished ? ECAM.GREEN : ECAM.DIM;
+    const slColor = rvEstablished ? ECAM.RED : ECAM.DIM;
+
+    if (tpY > tapeY0 && tpY < tapeY0 + tapeH) {
+      elements.push(<line key="tp-line" x1="60" y1={tpY} x2="140" y2={tpY} stroke={tpColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<text key="tp-lbl" x="144" y={tpY - 3} fill={tpColor} fontSize="8" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>TP</text>);
+      elements.push(<text key="tp-val" x="144" y={tpY + 8} fill={tpColor} fontSize="7" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>{rv.tpPct.toFixed(3)}%</text>);
+    }
+    if (slY > tapeY0 && slY < tapeY0 + tapeH) {
+      elements.push(<line key="sl-line" x1="60" y1={slY} x2="140" y2={slY} stroke={slColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<text key="sl-lbl" x="144" y={slY - 3} fill={slColor} fontSize="8" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>SL</text>);
+      elements.push(<text key="sl-val" x="144" y={slY + 8} fill={slColor} fontSize="7" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>{rv.slPct.toFixed(3)}%</text>);
+    }
+  }
+
   // Rate of change gauge
   const rocClamp = Math.max(-5, Math.min(5, priceRoC));
   const rocBarH = (Math.abs(rocClamp) / 5) * 70;
@@ -119,9 +146,21 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <Typography sx={{ color: ECAM.WHITE, fontSize: '0.7rem', letterSpacing: '0.12em', mb: 0.5, fontWeight: 700 }}>
-        SPEED — PRICE
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+        <IconButton
+          onClick={onScaleUp}
+          size="small"
+          sx={{ width: 18, height: 18, color: ECAM.CYAN, border: `1px solid ${ECAM.BORDER}`, borderRadius: '3px', fontSize: '0.7rem', p: 0, '&:hover': { bgcolor: 'rgba(0,221,255,0.1)' } }}
+        >+</IconButton>
+        <Typography sx={{ color: ECAM.WHITE, fontSize: '0.7rem', letterSpacing: '0.12em', fontWeight: 700 }}>
+          SPEED — PRICE
+        </Typography>
+        <IconButton
+          onClick={onScaleDown}
+          size="small"
+          sx={{ width: 18, height: 18, color: ECAM.CYAN, border: `1px solid ${ECAM.BORDER}`, borderRadius: '3px', fontSize: '0.7rem', p: 0, '&:hover': { bgcolor: 'rgba(0,221,255,0.1)' } }}
+        >−</IconButton>
+      </Box>
       <svg width="100%" height="100%" viewBox="0 0 200 380" style={{ maxWidth: 200 }}>
         <rect x="0" y="0" width="200" height="380" fill="rgba(5,5,10,0.9)" rx="4" />
         {elements}

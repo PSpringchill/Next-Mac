@@ -41,6 +41,8 @@ const DEFAULT_CONFIG: RadarVectorConfig = {
 
 export type RadarVectorStatus = 'SCANNING' | 'SEARCHING' | 'ESTABLISH' | 'NO VECTOR';
 
+export type DominantSide = 'BUY' | 'SELL' | 'NEUTRAL';
+
 export interface RadarVectorState {
   status: RadarVectorStatus;
   // Optimal parameters (only valid when ESTABLISH)
@@ -48,6 +50,12 @@ export interface RadarVectorState {
   slPct: number;               // Stop-loss %
   entryObi: number;            // Entry OBI threshold %
   drawdownPct: number;         // Max drawdown from backtest %
+  // Dominant trade side
+  dominantSide: DominantSide;  // Which side has more wins
+  buyWinRate: number;          // Buy-side win rate
+  sellWinRate: number;         // Sell-side win rate
+  buyTrades: number;           // Total buy trades in backtest
+  sellTrades: number;          // Total sell trades in backtest
   // Metrics from the best grid search result
   sharpe: number;
   winRate: number;
@@ -68,6 +76,11 @@ const EMPTY_STATE: RadarVectorState = {
   slPct: 0,
   entryObi: 0,
   drawdownPct: 0,
+  dominantSide: 'NEUTRAL',
+  buyWinRate: 0,
+  sellWinRate: 0,
+  buyTrades: 0,
+  sellTrades: 0,
   sharpe: 0,
   winRate: 0,
   totalReturn: 0,
@@ -152,6 +165,27 @@ class RadarVector {
       this.state.sharpe = metrics.sharpeRatio;
       this.state.winRate = metrics.winRate;
       this.state.totalReturn = metrics.totalReturn;
+
+      // Extract dominant trade side from best result's directional stats
+      const bestCell = result.all.find(c =>
+        c.params.tpPct === best.tpPct && c.params.slPct === best.slPct && c.params.entryObi === best.entryObi
+      );
+      if (bestCell) {
+        const d = bestCell.directional;
+        this.state.buyWinRate = d.buyWinRate;
+        this.state.sellWinRate = d.sellWinRate;
+        this.state.buyTrades = d.buyTrades;
+        this.state.sellTrades = d.sellTrades;
+        if (d.buyTrades + d.sellTrades === 0) {
+          this.state.dominantSide = 'NEUTRAL';
+        } else if (d.buyWinRate > d.sellWinRate + 0.05) {
+          this.state.dominantSide = 'BUY';
+        } else if (d.sellWinRate > d.buyWinRate + 0.05) {
+          this.state.dominantSide = 'SELL';
+        } else {
+          this.state.dominantSide = 'NEUTRAL';
+        }
+      }
 
       // Determine ESTABLISH status
       if (
