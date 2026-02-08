@@ -80,19 +80,7 @@ export default function Home() {
       <OrderBookProvider>
         <DashboardLayout />
       </OrderBookProvider>
-      <footer className="py-4 bg-dark text-light text-center" style={{ position: 'fixed', bottom: 20, left: 0, right: 0, zIndex: 2000 }}>    
-          <Dock>
-            {GRADIENTS.map((src, index) =>
-              src ? (
-                <DockCard key={src}>
-                  <Card src={src} />
-                </DockCard>
-              ) : (
-                <DockDivider key={index} />
-              )
-            )}
-          </Dock>
-      </footer>
+
     </ThemeProvider>
   );
 }

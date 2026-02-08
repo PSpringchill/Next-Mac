@@ -1,5 +1,5 @@
 // src/components/Dashboard/DashboardLayout.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Container, 
   Box, 
@@ -69,11 +69,14 @@ const TabPanel = ({ children, value, index }: any) => (
 );
 
 const DashboardLayout: React.FC = () => {
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true });
+
+  useEffect(() => { setMounted(true); }, []);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -84,6 +87,8 @@ const DashboardLayout: React.FC = () => {
       setFullscreen(false);
     }
   };
+
+  if (!mounted) return null;
 
   return (
     <StyledContainer>

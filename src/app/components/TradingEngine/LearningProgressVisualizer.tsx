@@ -152,8 +152,8 @@ const LearningProgressVisualizer: React.FC = () => {
       paper_bgcolor: 'transparent',
       plot_bgcolor: 'transparent',
       font: { color: '#ffffff' },
-      height: 250,
-      margin: { t: 40, b: 30, l: 30, r: 10 },
+      height: 220,
+      margin: { t: 35, b: 25, l: 35, r: 10 },
       autosize: true
     }
   };
@@ -177,8 +177,8 @@ const LearningProgressVisualizer: React.FC = () => {
       paper_bgcolor: 'transparent',
       plot_bgcolor: 'transparent',
       font: { color: '#ffffff' },
-      height: 250,
-      margin: { t: 40, b: 30, l: 30, r: 10 },
+      height: 220,
+      margin: { t: 35, b: 25, l: 35, r: 10 },
       autosize: true
     }
   };
@@ -239,25 +239,25 @@ const LearningProgressVisualizer: React.FC = () => {
 
       {/* Bottom Section: Charts stacked vertically (strictly 2 rows) */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
-        <Box sx={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 3, p: 1, minHeight: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Box sx={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 3, p: 1, minHeight: '230px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {metrics.length === 0 ? (
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.2)' }}>
               Calculating weight distributions...
             </Typography>
           ) : (
             <PlotlyErrorBoundary>
-              <Plot {...weightsHistogram} style={{ width: '100%', height: '250px' }} useResizeHandler />
+              <Plot {...weightsHistogram} style={{ width: '100%', height: '220px' }} useResizeHandler />
             </PlotlyErrorBoundary>
           )}
         </Box>
-        <Box sx={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 3, p: 1, minHeight: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Box sx={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 3, p: 1, minHeight: '230px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {metrics.length === 0 ? (
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.2)' }}>
               Monitoring gradient flow...
             </Typography>
           ) : (
             <PlotlyErrorBoundary>
-              <Plot {...gradientFlow} style={{ width: '100%', height: '250px' }} useResizeHandler />
+              <Plot {...gradientFlow} style={{ width: '100%', height: '220px' }} useResizeHandler />
             </PlotlyErrorBoundary>
           )}
         </Box>

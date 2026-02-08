@@ -126,8 +126,8 @@ const InteractiveFeatureImportance: React.FC = () => {
       paper_bgcolor: 'transparent',
       plot_bgcolor: 'transparent',
       font: { color: '#ffffff', family: 'Inter' },
-      height: 250,
-      margin: { t: 30, b: 30, l: 30, r: 10 },
+      height: 220,
+      margin: { t: 35, b: 25, l: 35, r: 10 },
       autosize: true
     }
   };
@@ -243,10 +243,11 @@ const InteractiveFeatureImportance: React.FC = () => {
               background: 'rgba(255, 255, 255, 0.01)',
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: 2,
-              p: 1
+              p: 1,
+              overflow: 'hidden'
             }}>
               <PlotlyErrorBoundary>
-                <Plot {...waterfallChart} style={{ width: '100%', height: '250px' }} useResizeHandler />
+                <Plot {...waterfallChart} style={{ width: '100%', height: '220px' }} useResizeHandler />
               </PlotlyErrorBoundary>
             </Box>
             <Box sx={{ 
