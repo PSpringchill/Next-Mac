@@ -16,6 +16,9 @@ import DynamicThresholds, { type RegimeResult } from './DynamicThresholds';
 import GradientSurpriseMonitor, { type SurpriseState } from './GradientSurpriseMonitor';
 import Level2FeatureExtractor from './Level2FeatureExtractor';
 import HiddenMarkovModel from './HiddenMarkovModel';
+import KalmanTrendFilter, { type KalmanState } from './KalmanTrendFilter';
+import LinearRegressionTarget, { type LinRegState } from './LinearRegressionTarget';
+import NaiveBayesRegime, { type NaiveBayesState } from './NaiveBayesRegime';
 import type { MarketRegime } from '@tradingEngine/types';
 
 export interface SignalFilterState {
@@ -28,6 +31,10 @@ export interface SignalFilterState {
   filteredConfidence: number;      // Signal confidence after HMM + gradient filtering
   filterReason: string | null;     // Why signal was modified/blocked
   blocked: boolean;                // Whether the signal was blocked
+  // Kalman + LinReg + NaiveBayes enrichment
+  kalman?: KalmanState;
+  linReg?: LinRegState;
+  naiveBayes?: NaiveBayesState;
 }
 
 export interface PaperTradeResult {
@@ -73,6 +80,14 @@ class PaperTradingEngine extends EventEmitter {
   private hmmTickCounter: number = 9;      // Fire first HMM on first tick
   private readonly hmmAnalysisInterval: number = 10;  // HMM every 10 ticks (lighter than Pareto)
 
+  // Kalman Trend + Linear Regression Target + Naive Bayes Regime
+  private kalmanFilter: KalmanTrendFilter;
+  private linRegTarget: LinearRegressionTarget;
+  private naiveBayesRegime: NaiveBayesRegime;
+  private lastKalman: KalmanState | null = null;
+  private lastLinReg: LinRegState | null = null;
+  private lastNaiveBayes: NaiveBayesState | null = null;
+
   constructor(
     engine: { processMarketData: TradingEngine['processMarketData'] } = new TradingEngine(),
     riskManager: RiskManager = new RiskManager()
@@ -89,6 +104,9 @@ class PaperTradingEngine extends EventEmitter {
     this.gradientMonitor = new GradientSurpriseMonitor(50, 0.6, 0.85);
     this.featureExtractor = new Level2FeatureExtractor();
     this.hmmRegimeDetector = new HiddenMarkovModel();
+    this.kalmanFilter = new KalmanTrendFilter(0.001, 0.1);
+    this.linRegTarget = new LinearRegressionTarget(30, 10);
+    this.naiveBayesRegime = new NaiveBayesRegime(30, 15);
     this.portfolio = 100000;
     this.position = 0;
     this.avgEntryPrice = 0;
@@ -164,6 +182,19 @@ class PaperTradingEngine extends EventEmitter {
 
     this.prevPrice = marketData.price;
 
+    // ─── Feed Kalman / LinReg / NaiveBayes ────────────────────────────────
+    this.lastKalman = this.kalmanFilter.update(marketData.price);
+    this.lastLinReg = this.linRegTarget.update(marketData.price);
+    const depth = Math.min(5, marketData.orderBook.bids.length, marketData.orderBook.asks.length);
+    let bidVol = 0, askVol = 0;
+    for (let d = 0; d < depth; d++) {
+      bidVol += parseFloat(marketData.orderBook.bids[d]?.[1] ?? '0');
+      askVol += parseFloat(marketData.orderBook.asks[d]?.[1] ?? '0');
+    }
+    const totalVol = bidVol + askVol;
+    const obi = totalVol > 0 ? ((bidVol - askVol) / totalVol) * 100 : 0;
+    this.lastNaiveBayes = this.naiveBayesRegime.update(marketData.price, obi, spread);
+
     // Compute monitoring surprise and build signalFilter for dashboard
     const monitoringSurprise = this.gradientMonitor.computeSurprise();
 
@@ -188,6 +219,9 @@ class PaperTradingEngine extends EventEmitter {
       filteredConfidence: monitoredFiltered,
       filterReason: this.lastHmmRegime ? monitoringReason : 'HMM initializing — awaiting first regime detection',
       blocked: monitoringSurprise.shouldBlockTrade,
+      kalman: this.lastKalman ?? undefined,
+      linReg: this.lastLinReg ?? undefined,
+      naiveBayes: this.lastNaiveBayes ?? undefined,
     };
 
     return {
@@ -312,6 +346,21 @@ class PaperTradingEngine extends EventEmitter {
     const hmmFilter = this.applyHMMFilter(signal);
     const filteredConfidence = hmmFilter.filteredConfidence;
 
+    // ─── MCML Gate 3: Kalman + LinReg + NaiveBayes enrichment ─────────────
+    // Kalman reversal can dampen confidence if signal contradicts trend reversal
+    let kalmanAdj = 1.0;
+    if (this.lastKalman && Math.abs(this.lastKalman.reversalSignal) > 0.3) {
+      // If signal direction opposes the reversal, reduce confidence
+      if (signal.direction > 0 && this.lastKalman.reversalSignal < -0.3) {
+        kalmanAdj = 0.6; // Buying into bearish reversal
+      } else if (signal.direction < 0 && this.lastKalman.reversalSignal > 0.3) {
+        kalmanAdj = 0.6; // Selling into bullish reversal
+      } else {
+        kalmanAdj = 1.15; // Signal aligns with reversal — boost
+      }
+    }
+    const kalmanFilteredConfidence = Math.min(1.0, filteredConfidence * kalmanAdj);
+
     // Build signal filter state for dashboard
     this.lastSignalFilter = {
       hmmRegime: this.lastHmmRegime?.name ?? 'unknown',
@@ -320,9 +369,12 @@ class PaperTradingEngine extends EventEmitter {
       hmmConfidenceAdj: hmmFilter.hmmConfidenceAdj,
       gradientSurprise: surpriseState,
       originalConfidence: signal.confidence,
-      filteredConfidence,
+      filteredConfidence: kalmanFilteredConfidence,
       filterReason: hmmFilter.filterReason ?? surpriseState.blockReason,
       blocked: hmmFilter.blocked || surpriseState.shouldBlockTrade,
+      kalman: this.lastKalman ?? undefined,
+      linReg: this.lastLinReg ?? undefined,
+      naiveBayes: this.lastNaiveBayes ?? undefined,
     };
 
     // LOCKOUT check: block new trades if alpha is in danger zone
@@ -332,7 +384,7 @@ class PaperTradingEngine extends EventEmitter {
     const hmmBlocked = hmmFilter.blocked;
 
     if (!alphaBlocked && !gradientBlocked && !hmmBlocked
-        && signal.direction !== 0 && filteredConfidence > 0.7) {
+        && signal.direction !== 0 && kalmanFilteredConfidence > 0.7) {
       const direction = signal.direction > 0 ? 1 : -1;
       // Apply Pareto position size multiplier
       const paretoMultiplier = this.lastParetoState
