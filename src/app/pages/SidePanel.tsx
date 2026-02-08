@@ -84,6 +84,7 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
   const signalFilter = useTradingStore((s) => s.signalFilter);
   const dynamicRegime = useTradingStore((s) => s.dynamicRegime);
   const signal = useTradingStore((s) => s.currentSignal);
+  const radarVector = useTradingStore((s) => s.radarVector);
 
   // ─── RISK card data ───
   const alphaState = paretoState?.alphaState;
@@ -204,6 +205,94 @@ const SidePanel: React.FC<SidePanelProps> = ({ open }) => {
           { label: 'Policy', value: `${policySteps} steps`, color: C.WHITE },
         ]}
       />
+
+      {/* ─── RADAR VECTOR Card ─── */}
+      {radarVector && (() => {
+        const rv = radarVector;
+        const rvColor = rv.status === 'ESTABLISH' ? C.GREEN
+          : rv.status === 'SCANNING' ? C.CYAN
+          : rv.status === 'SEARCHING' ? C.AMBER : C.DIM;
+        const sideColor = rv.dominantSide === 'BUY' ? C.GREEN
+          : rv.dominantSide === 'SELL' ? C.RED : C.AMBER;
+        return (
+          <Box sx={{
+            mx: 1.5, mb: 1, p: 1.2,
+            bgcolor: C.PANEL,
+            border: `1px solid ${C.BORDER}`,
+            borderLeft: `3px solid ${rvColor}`,
+            borderRadius: 1,
+            transition: 'border-color 0.3s',
+            '&:hover': { borderColor: 'rgba(255,255,255,0.12)' },
+          }}>
+            {/* Header */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.8 }}>
+              <Typography sx={{ color: C.WHITE, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.12em' }}>
+                RADAR VECTOR
+              </Typography>
+              <Typography sx={{
+                color: rvColor, fontSize: '0.55rem', fontWeight: 700,
+                px: 0.6, py: 0.15,
+                border: `1px solid ${rv.status === 'ESTABLISH' ? C.GREEN : 'rgba(255,255,255,0.1)'}`,
+                borderRadius: 0.5,
+                bgcolor: rv.status === 'ESTABLISH' ? 'rgba(0,255,136,0.1)' : 'transparent',
+              }}>
+                {rv.status}
+              </Typography>
+            </Box>
+
+            {/* Scanning progress bar */}
+            {rv.status === 'SCANNING' && (
+              <Box sx={{ mb: 0.8 }}>
+                <Box sx={{ height: 3, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 1, overflow: 'hidden' }}>
+                  <Box sx={{
+                    height: '100%', bgcolor: C.CYAN, borderRadius: 1,
+                    width: `${Math.min(100, (rv.dataPoints / 100) * 100)}%`,
+                    transition: 'width 0.3s',
+                  }} />
+                </Box>
+                <Typography sx={{ color: C.DIM, fontSize: '0.48rem', mt: 0.2 }}>
+                  Collecting: {rv.dataPoints}/100 ticks
+                </Typography>
+              </Box>
+            )}
+
+            {/* Parameters + Metrics */}
+            {rv.searchCount > 0 && (
+              <>
+                {[
+                  { label: 'TP', value: rv.tpPct.toFixed(3) + '%', color: rv.status === 'ESTABLISH' ? C.GREEN : C.DIM },
+                  { label: 'SL', value: rv.slPct.toFixed(3) + '%', color: rv.status === 'ESTABLISH' ? C.RED : C.DIM },
+                  { label: 'Entry OBI', value: rv.entryObi.toFixed(1) + '%', color: rv.status === 'ESTABLISH' ? C.CYAN : C.DIM },
+                  { label: 'Max DD', value: rv.drawdownPct.toFixed(2) + '%', color: rv.drawdownPct > 5 ? C.AMBER : rv.status === 'ESTABLISH' ? C.GREEN : C.DIM },
+                  { label: 'Sharpe', value: rv.sharpe.toFixed(2), color: rv.sharpe >= 1.0 ? C.GREEN : rv.sharpe >= 0.5 ? C.AMBER : C.RED },
+                  { label: 'Win Rate', value: (rv.winRate * 100).toFixed(1) + '%', color: rv.winRate >= 0.5 ? C.GREEN : rv.winRate >= 0.4 ? C.AMBER : C.RED },
+                  { label: 'Return', value: (rv.totalReturn * 100).toFixed(3) + '%', color: rv.totalReturn > 0 ? C.GREEN : C.RED },
+                ].map(({ label, value, color }) => (
+                  <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.2 }}>
+                    <Typography sx={{ color: C.DIM, fontSize: '0.55rem' }}>{label}</Typography>
+                    <Typography sx={{ color, fontSize: '0.65rem', fontWeight: 600, fontFamily: 'monospace' }}>{value}</Typography>
+                  </Box>
+                ))}
+
+                {/* Dominant side */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.2, mt: 0.3, borderTop: `1px solid ${C.BORDER}`, pt: 0.5 }}>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.55rem' }}>Dominant</Typography>
+                  <Typography sx={{ color: sideColor, fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace' }}>{rv.dominantSide}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.1 }}>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.48rem' }}>BUY {(rv.buyWinRate * 100).toFixed(0)}% ({rv.buyTrades})</Typography>
+                  <Typography sx={{ color: C.DIM, fontSize: '0.48rem' }}>SELL {(rv.sellWinRate * 100).toFixed(0)}% ({rv.sellTrades})</Typography>
+                </Box>
+
+                {/* Search metadata */}
+                <Typography sx={{ color: C.DIM, fontSize: '0.42rem', mt: 0.5 }}>
+                  #{rv.searchCount} | {rv.totalCombinations} combos | {rv.lastSearchMs.toFixed(0)}ms | {rv.dataPoints} pts
+                </Typography>
+              </>
+            )}
+          </Box>
+        );
+      })()}
     </StyledDrawer>
   );
 };

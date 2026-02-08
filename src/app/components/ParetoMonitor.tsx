@@ -47,7 +47,6 @@ const ParetoMonitor: React.FC = () => {
   const dynamicRegime = useTradingStore((s) => s.dynamicRegime);
   const paretoHistory = useTradingStore((s) => s.paretoHistory);
   const signalFilter = useTradingStore((s) => s.signalFilter);
-  const radarVector = useTradingStore((s) => s.radarVector);
 
   // ─── Alpha sparkline path ───
   const sparklinePath = useMemo(() => {
@@ -530,102 +529,6 @@ const ParetoMonitor: React.FC = () => {
         </Box>
       )}
 
-      {/* ═══ RADAR VECTOR — Background Grid Search ═══ */}
-      {radarVector && (
-        <Box sx={{ bgcolor: ECAM.PANEL, p: 1.2, border: `1px solid ${ECAM.BORDER}` }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.8 }}>
-            <Typography sx={{ color: ECAM.WHITE, fontSize: '0.6rem', letterSpacing: '0.12em', fontWeight: 700 }}>
-              RADAR VECTOR
-            </Typography>
-            <Typography sx={{
-              color: radarVector.status === 'ESTABLISH' ? ECAM.GREEN
-                : radarVector.status === 'SCANNING' ? ECAM.CYAN
-                : radarVector.status === 'SEARCHING' ? ECAM.AMBER
-                : ECAM.DIM,
-              fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em',
-              px: 0.8, py: 0.2,
-              border: `1px solid ${radarVector.status === 'ESTABLISH' ? ECAM.GREEN : 'rgba(255,255,255,0.1)'}`,
-              borderRadius: 0.5,
-              bgcolor: radarVector.status === 'ESTABLISH' ? 'rgba(0,255,136,0.1)' : 'transparent',
-            }}>
-              {radarVector.status}
-            </Typography>
-          </Box>
-
-          {/* Progress bar for SCANNING */}
-          {radarVector.status === 'SCANNING' && (
-            <Box sx={{ mb: 1 }}>
-              <Box sx={{ height: 3, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 1, overflow: 'hidden' }}>
-                <Box sx={{
-                  height: '100%', bgcolor: ECAM.CYAN, borderRadius: 1,
-                  width: `${Math.min(100, (radarVector.dataPoints / 100) * 100)}%`,
-                  transition: 'width 0.3s',
-                }} />
-              </Box>
-              <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mt: 0.3 }}>
-                Collecting data: {radarVector.dataPoints}/100 ticks
-              </Typography>
-            </Box>
-          )}
-
-          {/* Parameters grid — shown when ESTABLISH or NO VECTOR */}
-          {radarVector.searchCount > 0 && (
-            <>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0.8, mb: 0.8 }}>
-                {[
-                  { label: 'TP', value: radarVector.tpPct.toFixed(3) + '%', color: radarVector.status === 'ESTABLISH' ? ECAM.GREEN : ECAM.DIM },
-                  { label: 'SL', value: radarVector.slPct.toFixed(3) + '%', color: radarVector.status === 'ESTABLISH' ? ECAM.RED : ECAM.DIM },
-                  { label: 'ENTRY OBI', value: radarVector.entryObi.toFixed(1) + '%', color: radarVector.status === 'ESTABLISH' ? ECAM.CYAN : ECAM.DIM },
-                  { label: 'MAX DD', value: radarVector.drawdownPct.toFixed(2) + '%', color: radarVector.drawdownPct > 5 ? ECAM.AMBER : radarVector.status === 'ESTABLISH' ? ECAM.GREEN : ECAM.DIM },
-                ].map(({ label, value, color }) => (
-                  <Box key={label} sx={{ textAlign: 'center' }}>
-                    <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mb: 0.2 }}>{label}</Typography>
-                    <Typography sx={{ color, fontSize: '0.72rem', fontWeight: 700 }}>{value}</Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              {/* Metrics row */}
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0.8 }}>
-                {[
-                  { label: 'SHARPE', value: radarVector.sharpe.toFixed(2), color: radarVector.sharpe >= 1.0 ? ECAM.GREEN : radarVector.sharpe >= 0.5 ? ECAM.AMBER : ECAM.RED },
-                  { label: 'WIN RATE', value: (radarVector.winRate * 100).toFixed(1) + '%', color: radarVector.winRate >= 0.5 ? ECAM.GREEN : radarVector.winRate >= 0.4 ? ECAM.AMBER : ECAM.RED },
-                  { label: 'RETURN', value: (radarVector.totalReturn * 100).toFixed(2) + '%', color: radarVector.totalReturn > 0 ? ECAM.GREEN : ECAM.RED },
-                ].map(({ label, value, color }) => (
-                  <Box key={label} sx={{ textAlign: 'center' }}>
-                    <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mb: 0.2 }}>{label}</Typography>
-                    <Typography sx={{ color, fontSize: '0.68rem', fontWeight: 600 }}>{value}</Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              {/* Dominant trade side */}
-              <Box sx={{ mt: 0.8, display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
-                <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem' }}>DOMINANT</Typography>
-                <Typography sx={{
-                  color: radarVector.dominantSide === 'BUY' ? ECAM.GREEN : radarVector.dominantSide === 'SELL' ? ECAM.RED : ECAM.AMBER,
-                  fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em',
-                }}>
-                  {radarVector.dominantSide}
-                </Typography>
-                <Typography sx={{ color: ECAM.DIM, fontSize: '0.48rem' }}>
-                  BUY {(radarVector.buyWinRate * 100).toFixed(0)}% ({radarVector.buyTrades}) | SELL {(radarVector.sellWinRate * 100).toFixed(0)}% ({radarVector.sellTrades})
-                </Typography>
-              </Box>
-
-              {/* Search metadata */}
-              <Box sx={{ mt: 0.8, display: 'flex', justifyContent: 'space-between' }}>
-                <Typography sx={{ color: ECAM.DIM, fontSize: '0.48rem' }}>
-                  Searches: {radarVector.searchCount} | Combos: {radarVector.totalCombinations} | Valid: {radarVector.validatedCount}/{radarVector.validatedCount + radarVector.rejectedCount}
-                </Typography>
-                <Typography sx={{ color: ECAM.DIM, fontSize: '0.48rem' }}>
-                  {radarVector.lastSearchMs.toFixed(0)}ms | {radarVector.dataPoints} pts
-                </Typography>
-              </Box>
-            </>
-          )}
-        </Box>
-      )}
 
       {/* ═══ POT (Peaks Over Threshold) ═══ */}
       {paretoState?.pot && paretoState.pot.exceedances > 0 && (
