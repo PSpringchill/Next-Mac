@@ -113,13 +113,23 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
 
     if (tpY > tapeY0 && tpY < tapeY0 + tapeH) {
       elements.push(<line key="tp-line" x1="60" y1={tpY} x2="140" y2={tpY} stroke={tpColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
-      elements.push(<text key="tp-lbl" x="144" y={tpY - 3} fill={tpColor} fontSize="8" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>TP</text>);
-      elements.push(<text key="tp-val" x="144" y={tpY + 8} fill={tpColor} fontSize="7" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>{rv.tpPct.toFixed(3)}%</text>);
+      elements.push(
+        <g key="tp-tag" style={{ transition: 'transform 0.8s ease-out' }}>
+          <rect x="0" y={tpY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={tpColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
+          <text x="5" y={tpY - 3} fill={tpColor} fontSize="9" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>TP {rv.tpPct.toFixed(2)}%</text>
+          <text x="5" y={tpY + 10} fill={tpColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{tpPrice.toFixed(2)}</text>
+        </g>
+      );
     }
     if (slY > tapeY0 && slY < tapeY0 + tapeH) {
       elements.push(<line key="sl-line" x1="60" y1={slY} x2="140" y2={slY} stroke={slColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
-      elements.push(<text key="sl-lbl" x="144" y={slY - 3} fill={slColor} fontSize="8" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>SL</text>);
-      elements.push(<text key="sl-val" x="144" y={slY + 8} fill={slColor} fontSize="7" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>{rv.slPct.toFixed(3)}%</text>);
+      elements.push(
+        <g key="sl-tag" style={{ transition: 'transform 0.8s ease-out' }}>
+          <rect x="0" y={slY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={slColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
+          <text x="5" y={slY - 3} fill={slColor} fontSize="9" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>SL {rv.slPct.toFixed(2)}%</text>
+          <text x="5" y={slY + 10} fill={slColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{slPrice.toFixed(2)}</text>
+        </g>
+      );
     }
   }
 
