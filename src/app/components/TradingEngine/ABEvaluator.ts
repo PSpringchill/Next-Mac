@@ -1,165 +1,52 @@
-import { MarketData, TradingSignal, PortfolioState, MarketRegime } from '@tradingEngine/types';
-import Backtester, { TradingEngineLike } from './Backtester';
-import DuelingDQN from './DuelingDQN';
-import UnifiedStateEncoder from './UnifiedStateEncoder';
-import Level2FeatureExtractor from './Level2FeatureExtractor';
+import { MarketData, BacktestResult } from '@tradingEngine/types';
+import GridSearchOptimizer, { GridSearchResult, GridParams } from './GridSearchOptimizer';
 
-interface ABResult {
-  baseline: Awaited<ReturnType<Backtester['runBacktest']>>;
-  mdp: Awaited<ReturnType<Backtester['runBacktest']>>;
+export interface ABResult {
+  // Grid search results (replaces old baseline/MDP approach)
+  gridSearch: GridSearchResult;
+  bestParams: GridParams & { score: number };
+  bestMetrics: BacktestResult;
+  // Summary deltas (best vs median for quick display)
   delta: {
     totalReturn: number;
     sharpeRatio: number;
     maxDrawdown: number;
     winRate: number;
   };
-}
-
-const DEFAULT_REGIME: MarketRegime = {
-  name: 'unknown',
-  volatility: 0.01,
-  momentum: 0,
-  isTransition: false,
-  transitionProbabilities: [0, 0, 0, 0, 0]
-};
-
-const DEFAULT_PORTFOLIO: PortfolioState = {
-  position: 0,
-  unrealizedPnl: 0,
-  timeInTradeSec: 0,
-  marginUtilization: 0,
-  tradesToday: 0,
-  dailyPnl: 0,
-  maxDrawdownToday: 0,
-  availableRiskBudget: 1,
-  lastTradeTimestamp: null
-};
-
-class MDPTradingEngine implements TradingEngineLike {
-  private dqn: DuelingDQN;
-  private encoder: UnifiedStateEncoder;
-  private featureExtractor: Level2FeatureExtractor;
-
-  constructor() {
-    this.dqn = new DuelingDQN({ stateSize: 78, actionSize: 15, regimeHeads: 5 });
-    this.encoder = new UnifiedStateEncoder();
-    this.featureExtractor = new Level2FeatureExtractor();
-  }
-
-  async processMarketData(
-    orderBook: MarketData['orderBook'],
-    _openInterest: MarketData['openInterest'],
-    _fundingRate: MarketData['fundingRate']
-  ): Promise<TradingSignal> {
-    const microstructure = this.featureExtractor.extractMicrostructure(orderBook);
-    const state = this.encoder.encode({
-      microstructure,
-      regime: DEFAULT_REGIME,
-      portfolio: DEFAULT_PORTFOLIO
-    });
-
-    const qValues = this.dqn.predict(state, 0);
-    const values = Array.from(qValues.dataSync());
-    qValues.dispose();
-
-    let action = 0;
-    let maxValue = values[0] ?? 0;
-    for (let i = 1; i < values.length; i += 1) {
-      if (values[i] > maxValue) {
-        maxValue = values[i];
-        action = i;
-      }
-    }
-
-    // Epsilon-greedy: 50% exploration so untrained model still generates trades
-    if (Math.random() < 0.5) {
-      action = Math.floor(Math.random() * values.length);
-      maxValue = values[action] ?? 0;
-    }
-
-    // Narrower hold zone: 0-5 sell, 6-8 hold, 9-14 buy
-    const direction = action <= 5 ? -1 : action <= 8 ? 0 : 1;
-    const strength = action <= 5 ? (6 - action) / 6 : action >= 9 ? (action - 8) / 6 : 0.1;
-
-    // Sigmoid normalization: maps any Q-value range to (0, 1)
-    const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
-    const confidence = Math.max(0.35, sigmoid(maxValue * 2)); // floor at 0.35 for evaluation
-
-    return {
-      direction,
-      strength,
-      confidence,
-      timestamp: Date.now(),
-      metadata: { action, qValue: maxValue }
-    };
-  }
-}
-
-class BaselineGBFSEngine implements TradingEngineLike {
-  private prevMid = 0;
-
-  async processMarketData(
-    orderBook: MarketData['orderBook'],
-    _openInterest: MarketData['openInterest'],
-    _fundingRate: MarketData['fundingRate']
-  ): Promise<TradingSignal> {
-    const bestBid = parseFloat(orderBook.bids[0]?.[0] ?? '0');
-    const bestAsk = parseFloat(orderBook.asks[0]?.[0] ?? '0');
-    const mid = (bestBid + bestAsk) / 2;
-
-    // Order book imbalance across top 5 levels
-    let bidVol = 0, askVol = 0;
-    const depth = Math.min(5, orderBook.bids.length, orderBook.asks.length);
-    for (let i = 0; i < depth; i++) {
-      bidVol += parseFloat(orderBook.bids[i]?.[1] ?? '0');
-      askVol += parseFloat(orderBook.asks[i]?.[1] ?? '0');
-    }
-    const totalVol = bidVol + askVol;
-    const imbalance = totalVol > 0 ? (bidVol - askVol) / totalVol : 0; // -1 to +1
-
-    // Momentum from price change
-    const momentum = this.prevMid > 0 ? (mid - this.prevMid) / this.prevMid : 0;
-    this.prevMid = mid;
-
-    // Combined signal: imbalance + momentum
-    const rawSignal = imbalance * 0.7 + Math.sign(momentum) * Math.min(1, Math.abs(momentum) * 1000) * 0.3;
-    const direction = rawSignal > 0.05 ? 1 : rawSignal < -0.05 ? -1 : 0;
-    const strength = Math.min(1, Math.abs(rawSignal));
-    const confidence = Math.min(1, Math.abs(imbalance) + strength * 0.5);
-
-    return {
-      direction,
-      strength,
-      confidence,
-      timestamp: Date.now(),
-      metadata: { mid, imbalance, momentum }
-    };
-  }
+  // Top 5 parameter sets for comparison
+  top5: Array<{ params: GridParams; metrics: BacktestResult; score: number }>;
 }
 
 class ABEvaluator {
-  async run(data: MarketData[]): Promise<ABResult> {
-    const baselineEngine = new BaselineGBFSEngine();
-    const mdpEngine = new MDPTradingEngine();
+  private optimizer: GridSearchOptimizer;
 
-    const baselineTester = new Backtester(baselineEngine);
-    const mdpTester = new Backtester(mdpEngine);
+  constructor() {
+    this.optimizer = new GridSearchOptimizer();
+  }
 
-    const baseline = await baselineTester.runBacktest(data);
-    const mdp = await mdpTester.runBacktest(data);
+  run(data: MarketData[]): ABResult {
+    const gridSearch = this.optimizer.run(data);
+
+    // Compute median metrics for delta comparison
+    const validResults = gridSearch.all.filter(r => r.score > -Infinity);
+    const medianIdx = Math.floor(validResults.length / 2);
+    const sorted = [...validResults].sort((a, b) => a.metrics.totalReturn - b.metrics.totalReturn);
+    const median = sorted[medianIdx]?.metrics ?? { totalReturn: 0, sharpeRatio: 0, maxDrawdown: 0, winRate: 0 };
 
     return {
-      baseline,
-      mdp,
+      gridSearch,
+      bestParams: gridSearch.best,
+      bestMetrics: gridSearch.bestMetrics,
       delta: {
-        totalReturn: mdp.totalReturn - baseline.totalReturn,
-        sharpeRatio: mdp.sharpeRatio - baseline.sharpeRatio,
-        maxDrawdown: mdp.maxDrawdown - baseline.maxDrawdown,
-        winRate: mdp.winRate - baseline.winRate
-      }
+        totalReturn: gridSearch.bestMetrics.totalReturn - median.totalReturn,
+        sharpeRatio: gridSearch.bestMetrics.sharpeRatio - median.sharpeRatio,
+        maxDrawdown: gridSearch.bestMetrics.maxDrawdown - median.maxDrawdown,
+        winRate: gridSearch.bestMetrics.winRate - median.winRate,
+      },
+      top5: gridSearch.all.slice(0, 5),
     };
   }
 }
 
 export default ABEvaluator;
-export type { ABResult };
+export type { GridSearchResult, GridParams };

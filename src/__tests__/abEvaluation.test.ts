@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import ABEvaluator from '../app/components/TradingEngine/ABEvaluator';
+import GridSearchOptimizer, { runTPSLBacktest, computeOBI } from '../app/components/TradingEngine/GridSearchOptimizer';
 import StressTestHarness from '../app/components/TradingEngine/StressTestHarness';
 import { MarketData } from '@tradingEngine/types';
 
@@ -53,56 +54,63 @@ function generateSyntheticData(count: number): MarketData[] {
   return data;
 }
 
-describe('ABEvaluator — end-to-end', () => {
-  it('produces non-zero delta metrics with 200 ticks of synthetic data', async () => {
+describe('GridSearchOptimizer', () => {
+  it('computeOBI returns values in -100..+100 range', () => {
+    const data = generateSyntheticData(10);
+    for (const tick of data) {
+      const obi = computeOBI(tick.orderBook);
+      expect(obi).toBeGreaterThanOrEqual(-100);
+      expect(obi).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('runTPSLBacktest produces trades with reasonable params', () => {
+    const data = generateSyntheticData(200);
+    const result = runTPSLBacktest(data, { tpPct: 0.1, slPct: 0.05, entryObi: 5 });
+
+    console.log('TPSL backtest: trades =', result.trades.length, 'return =', result.totalReturn, 'winRate =', result.winRate);
+    expect(result.trades.length).toBeGreaterThan(0);
+  });
+
+  it('grid search finds best params from 200 ticks', () => {
+    const data = generateSyntheticData(200);
+    const optimizer = new GridSearchOptimizer();
+    const result = optimizer.run(data);
+
+    console.log('=== GRID SEARCH ===');
+    console.log('Combinations:', result.totalCombinations);
+    console.log('Elapsed:', result.elapsed.toFixed(0), 'ms');
+    console.log('Best TP:', result.best.tpPct, 'SL:', result.best.slPct, 'OBI:', result.best.entryObi);
+    console.log('Best score:', result.best.score.toFixed(2));
+    console.log('Best return:', (result.bestMetrics.totalReturn * 100).toFixed(3) + '%');
+    console.log('Best winRate:', (result.bestMetrics.winRate * 100).toFixed(1) + '%');
+    console.log('Best sharpe:', result.bestMetrics.sharpeRatio.toFixed(2));
+
+    expect(result.totalCombinations).toBe(8 * 7 * 6); // 336 combos
+    expect(result.best.tpPct).toBeGreaterThan(0);
+    expect(result.best.slPct).toBeGreaterThan(0);
+    expect(result.best.score).toBeGreaterThan(-Infinity);
+  });
+});
+
+describe('ABEvaluator — grid search', () => {
+  it('returns best params and delta vs median', () => {
     const data = generateSyntheticData(200);
     const evaluator = new ABEvaluator();
-    const result = await evaluator.run(data);
+    const result = evaluator.run(data);
 
-    console.log('=== A/B EVALUATION RESULT ===');
-    console.log('Baseline trades:', result.baseline.trades.length);
-    result.baseline.trades.forEach((t, i) => console.log(`  B[${i}] ${t.type} sz=${t.size.toFixed(4)} px=${t.price.toFixed(2)} pnl=${t.pnl?.toFixed(4)}`));
-    console.log('Baseline return:', result.baseline.totalReturn);
-    console.log('Baseline sharpe:', result.baseline.sharpeRatio);
-    console.log('Baseline drawdown:', result.baseline.maxDrawdown);
-    console.log('Baseline winRate:', result.baseline.winRate);
-    console.log('---');
-    console.log('MDP trades:', result.mdp.trades.length);
-    result.mdp.trades.forEach((t, i) => console.log(`  M[${i}] ${t.type} sz=${t.size.toFixed(4)} px=${t.price.toFixed(2)} pnl=${t.pnl?.toFixed(4)}`));
-    console.log('MDP return:', result.mdp.totalReturn);
-    console.log('MDP sharpe:', result.mdp.sharpeRatio);
-    console.log('MDP drawdown:', result.mdp.maxDrawdown);
-    console.log('MDP winRate:', result.mdp.winRate);
-    console.log('---');
-    console.log('Delta return:', result.delta.totalReturn);
-    console.log('Delta sharpe:', result.delta.sharpeRatio);
-    console.log('Delta drawdown:', result.delta.maxDrawdown);
-    console.log('Delta winRate:', result.delta.winRate);
+    console.log('=== AB EVALUATOR (Grid Search) ===');
+    console.log('Best: TP', result.bestParams.tpPct, 'SL', result.bestParams.slPct, 'OBI', result.bestParams.entryObi);
+    console.log('Delta return:', (result.delta.totalReturn * 100).toFixed(3) + '%');
+    console.log('Top 5:');
+    result.top5.forEach((r, i) => {
+      console.log(`  #${i + 1} TP=${r.params.tpPct} SL=${r.params.slPct} OBI=${r.params.entryObi} ret=${(r.metrics.totalReturn * 100).toFixed(3)}% WR=${(r.metrics.winRate * 100).toFixed(0)}%`);
+    });
 
-    // At least one engine should have executed trades
-    const totalTrades = result.baseline.trades.length + result.mdp.trades.length;
-    expect(totalTrades).toBeGreaterThan(0);
-
-    // At least one delta metric should be non-zero
-    const anyNonZero =
-      result.delta.totalReturn !== 0 ||
-      result.delta.sharpeRatio !== 0 ||
-      result.delta.maxDrawdown !== 0 ||
-      result.delta.winRate !== 0;
-    expect(anyNonZero).toBe(true);
-  }, 30000);
-
-  it('baseline engine produces trades with realistic order book data', async () => {
-    const data = generateSyntheticData(100);
-    const evaluator = new ABEvaluator();
-    const result = await evaluator.run(data);
-
-    console.log('Baseline trades with 100 ticks:', result.baseline.trades.length);
-    console.log('MDP trades with 100 ticks:', result.mdp.trades.length);
-
-    // Baseline should have at least some trades from the oscillating imbalance
-    expect(result.baseline.trades.length).toBeGreaterThan(0);
-  }, 30000);
+    expect(result.bestParams.tpPct).toBeGreaterThan(0);
+    expect(result.bestParams.slPct).toBeGreaterThan(0);
+    expect(result.top5.length).toBe(5);
+  });
 });
 
 describe('StressTestHarness — end-to-end', () => {

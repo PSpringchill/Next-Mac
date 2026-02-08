@@ -40,14 +40,17 @@ interface TradingState {
   recordedData: MarketData[];
 
   evaluationResults: {
-    baseline: BacktestResult;
-    mdp: BacktestResult;
+    bestParams: { tpPct: number; slPct: number; entryObi: number; score: number };
+    bestMetrics: BacktestResult;
     delta: {
       totalReturn: number;
       sharpeRatio: number;
       maxDrawdown: number;
       winRate: number;
     };
+    top5: Array<{ params: { tpPct: number; slPct: number; entryObi: number }; metrics: BacktestResult; score: number }>;
+    totalCombinations: number;
+    elapsed: number;
   } | null;
   stressResults: Array<{ scenario: string; trades: Trade[]; maxDrawdown: number; finalPnl: number }> | null;
 
