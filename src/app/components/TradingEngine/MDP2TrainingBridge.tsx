@@ -1,7 +1,7 @@
 'use client';
 
 import { useContext, useEffect, useRef } from 'react';
-import { OrderBookContext } from '../../api/Page';
+import { OrderBookContext, OrderBookContextType } from '../../api/Page';
 import { useMLEngine } from '../../api/MLContext';
 import { useStrategyEngine } from '../../api/StrategyContext';
 import { useRiskManager } from '../../api/RiskContext';
@@ -24,7 +24,7 @@ const mapActionToSignal = (action: number) => {
 };
 
 const MDP2TrainingBridge = () => {
-  const context = useContext(OrderBookContext) as any;
+  const context = useContext(OrderBookContext) as OrderBookContextType | null;
 
   const { mlPrediction, prediction, regime } = useMLEngine();
   const { dqn, replayBuffer } = useStrategyEngine();
@@ -40,7 +40,7 @@ const MDP2TrainingBridge = () => {
   const trainStepRef = useRef(0);
 
   useEffect(() => {
-    const orderBook = context?.orderBookData as any;
+    const orderBook = context?.orderBookData;
     if (!orderBook?.asks?.length || !orderBook?.bids?.length) return;
 
     const now = Date.now();

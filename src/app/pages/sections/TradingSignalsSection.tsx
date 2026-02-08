@@ -9,14 +9,15 @@ const TradingSignalsSection: React.FC = () => {
   const signals = useMemo(() => {
     if (!mlPrediction || !regime) return [];
 
-    const horizons = [
+    type HorizonKey = 'horizon1ms' | 'horizon10ms' | 'horizon100ms';
+    const horizons: { key: HorizonKey; label: string }[] = [
       { key: 'horizon1ms', label: '1ms Horizon' },
       { key: 'horizon10ms', label: '10ms Horizon' },
       { key: 'horizon100ms', label: '100ms Horizon' }
     ];
 
     return horizons.map(h => {
-      const pred = (mlPrediction as any)[h.key];
+      const pred = mlPrediction[h.key];
       const direction = pred?.direction || 'hold';
       const confidence = pred?.confidence || 0;
       

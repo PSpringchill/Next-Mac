@@ -168,7 +168,7 @@ export const useTradingStore = create<TradingState>()(
     }),
 
     updateParetoState: (pareto) => set((state) => {
-      state.paretoState = pareto as any;
+      state.paretoState = JSON.parse(JSON.stringify(pareto));
       // Keep last 100 history points for dashboard chart
       state.paretoHistory.push({
         alpha: pareto.params.alpha,
@@ -181,7 +181,7 @@ export const useTradingStore = create<TradingState>()(
     }),
 
     updateDynamicRegime: (regime) => set((state) => {
-      state.dynamicRegime = regime as any;
+      state.dynamicRegime = JSON.parse(JSON.stringify(regime));
     }),
 
     updateSignalFilter: (filter) => set((state) => {

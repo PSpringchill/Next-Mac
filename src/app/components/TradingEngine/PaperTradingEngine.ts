@@ -171,8 +171,8 @@ class PaperTradingEngine extends EventEmitter {
     let monitoringAdj = 1.0;
     let monitoringReason: string | null = null;
     if (this.lastHmmRegime) {
-      const pseudoSignal = { direction: priceDir, confidence: pseudoConfidence, strength: 0, timestamp: Date.now() };
-      const hmmResult = this.applyHMMFilter(pseudoSignal as any);
+      const pseudoSignal: TradingSignal = { direction: priceDir, confidence: pseudoConfidence, strength: 0, timestamp: Date.now() };
+      const hmmResult = this.applyHMMFilter(pseudoSignal);
       monitoringAdj = hmmResult.hmmConfidenceAdj;
       monitoringReason = hmmResult.filterReason;
     }
