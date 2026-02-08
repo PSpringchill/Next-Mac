@@ -36,5 +36,7 @@ describe('ABEvaluator', () => {
     expect(result.bestMetrics).toBeDefined();
     expect(result.delta).toBeDefined();
     expect(result.top5).toBeDefined();
+    expect(result.gridSearch.stage1Count).toBe(336);
+    expect(result.gridSearch.stage2Count).toBeGreaterThanOrEqual(0);
   });
 });

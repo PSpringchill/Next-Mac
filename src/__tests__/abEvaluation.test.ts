@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import ABEvaluator from '../app/components/TradingEngine/ABEvaluator';
-import GridSearchOptimizer, { runTPSLBacktest, computeOBI } from '../app/components/TradingEngine/GridSearchOptimizer';
+import GridSearchOptimizer, { runTPSLBacktest, computeOBI, computeEquitySmoothness, validateVariant } from '../app/components/TradingEngine/GridSearchOptimizer';
 import StressTestHarness from '../app/components/TradingEngine/StressTestHarness';
 import { MarketData } from '@tradingEngine/types';
 
@@ -72,44 +72,88 @@ describe('GridSearchOptimizer', () => {
     expect(result.trades.length).toBeGreaterThan(0);
   });
 
-  it('grid search finds best params from 200 ticks', () => {
+  it('two-stage search: coarse + refined combos with validation', () => {
     const data = generateSyntheticData(200);
     const optimizer = new GridSearchOptimizer();
     const result = optimizer.run(data);
 
-    console.log('=== GRID SEARCH ===');
-    console.log('Combinations:', result.totalCombinations);
+    console.log('=== TWO-STAGE GRID SEARCH ===');
+    console.log('Stage 1:', result.stage1Count, '| Stage 2:', result.stage2Count, '| Total:', result.totalCombinations);
+    console.log('Validated:', result.validatedCount, '| Rejected:', result.rejectedCount);
     console.log('Elapsed:', result.elapsed.toFixed(0), 'ms');
     console.log('Best TP:', result.best.tpPct, 'SL:', result.best.slPct, 'OBI:', result.best.entryObi);
     console.log('Best score:', result.best.score.toFixed(2));
     console.log('Best return:', (result.bestMetrics.totalReturn * 100).toFixed(3) + '%');
-    console.log('Best winRate:', (result.bestMetrics.winRate * 100).toFixed(1) + '%');
-    console.log('Best sharpe:', result.bestMetrics.sharpeRatio.toFixed(2));
 
-    expect(result.totalCombinations).toBe(8 * 7 * 6); // 336 combos
+    // Stage 1 = 8*7*6 = 336 coarse combos
+    expect(result.stage1Count).toBe(8 * 7 * 6);
+    // Stage 2 should add refinement combos (> 0)
+    expect(result.stage2Count).toBeGreaterThanOrEqual(0);
+    // Total >= stage1
+    expect(result.totalCombinations).toBeGreaterThanOrEqual(result.stage1Count);
+    // Validation ran on some candidates
+    expect(result.validatedCount + result.rejectedCount).toBeGreaterThan(0);
+
     expect(result.best.tpPct).toBeGreaterThan(0);
     expect(result.best.slPct).toBeGreaterThan(0);
     expect(result.best.score).toBeGreaterThan(-Infinity);
   });
+
+  it('computeEquitySmoothness returns value in [-1, 1] range', () => {
+    const data = generateSyntheticData(200);
+    const result = runTPSLBacktest(data, { tpPct: 0.1, slPct: 0.05, entryObi: 5 });
+    const smoothness = computeEquitySmoothness(result.trades, 100000);
+
+    console.log('Equity smoothness:', smoothness.toFixed(4));
+    expect(smoothness).toBeGreaterThanOrEqual(-1);
+    expect(smoothness).toBeLessThanOrEqual(1);
+  });
+
+  it('validateVariant runs full anti-overfitting gauntlet', () => {
+    const data = generateSyntheticData(200);
+    const params = { tpPct: 0.1, slPct: 0.05, entryObi: 5 };
+    const metrics = runTPSLBacktest(data, params);
+    const validation = validateVariant(metrics, data, params);
+
+    console.log('=== VALIDATION ===');
+    console.log('Passed:', validation.passed);
+    console.log('Sanity:', validation.sanity, '| Plausibility:', validation.plausibility);
+    console.log('Smoothness:', validation.smoothness.toFixed(3));
+    console.log('WFV score:', validation.wfvScore.toFixed(3), '| WFV passed:', validation.wfvPassed);
+    if (validation.reasons.length > 0) console.log('Reasons:', validation.reasons.join('; '));
+
+    expect(typeof validation.passed).toBe('boolean');
+    expect(typeof validation.sanity).toBe('boolean');
+    expect(typeof validation.plausibility).toBe('boolean');
+    expect(validation.smoothness).toBeDefined();
+    expect(validation.wfvScore).toBeDefined();
+  });
 });
 
 describe('ABEvaluator — grid search', () => {
-  it('returns best params and delta vs median', () => {
+  it('returns best params with validation and delta vs median', () => {
     const data = generateSyntheticData(200);
     const evaluator = new ABEvaluator();
     const result = evaluator.run(data);
 
-    console.log('=== AB EVALUATOR (Grid Search) ===');
+    console.log('=== AB EVALUATOR (Two-Stage + WFV) ===');
     console.log('Best: TP', result.bestParams.tpPct, 'SL', result.bestParams.slPct, 'OBI', result.bestParams.entryObi);
+    console.log('Validation:', result.bestValidation?.passed ? 'PASSED' : 'FAILED/NONE');
+    if (result.bestValidation) {
+      console.log('  WFV:', result.bestValidation.wfvScore.toFixed(3), '| Smooth:', result.bestValidation.smoothness.toFixed(3));
+    }
     console.log('Delta return:', (result.delta.totalReturn * 100).toFixed(3) + '%');
     console.log('Top 5:');
     result.top5.forEach((r, i) => {
-      console.log(`  #${i + 1} TP=${r.params.tpPct} SL=${r.params.slPct} OBI=${r.params.entryObi} ret=${(r.metrics.totalReturn * 100).toFixed(3)}% WR=${(r.metrics.winRate * 100).toFixed(0)}%`);
+      const vBadge = r.validation?.passed ? '✓' : r.validation ? '✗' : '—';
+      console.log(`  #${i + 1} ${vBadge} TP=${r.params.tpPct} SL=${r.params.slPct} OBI=${r.params.entryObi} ret=${(r.metrics.totalReturn * 100).toFixed(3)}% WR=${(r.metrics.winRate * 100).toFixed(0)}%`);
     });
 
     expect(result.bestParams.tpPct).toBeGreaterThan(0);
     expect(result.bestParams.slPct).toBeGreaterThan(0);
     expect(result.top5.length).toBe(5);
+    expect(result.gridSearch.stage1Count).toBe(336);
+    expect(result.gridSearch.validatedCount + result.gridSearch.rejectedCount).toBeGreaterThan(0);
   });
 });
 

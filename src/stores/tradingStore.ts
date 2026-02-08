@@ -43,14 +43,19 @@ interface TradingState {
     bestParams: { tpPct: number; slPct: number; entryObi: number; score: number };
     bestMetrics: BacktestResult;
     bestDirectional: { buyTrades: number; buyWins: number; buyWinRate: number; sellTrades: number; sellWins: number; sellWinRate: number };
+    bestValidation: { passed: boolean; sanity: boolean; plausibility: boolean; smoothness: number; wfvScore: number; wfvPassed: boolean; reasons: string[] } | null;
     delta: {
       totalReturn: number;
       sharpeRatio: number;
       maxDrawdown: number;
       winRate: number;
     };
-    top5: Array<{ params: { tpPct: number; slPct: number; entryObi: number }; metrics: BacktestResult; directional: { buyTrades: number; buyWins: number; buyWinRate: number; sellTrades: number; sellWins: number; sellWinRate: number }; score: number }>;
+    top5: Array<{ params: { tpPct: number; slPct: number; entryObi: number }; metrics: BacktestResult; directional: { buyTrades: number; buyWins: number; buyWinRate: number; sellTrades: number; sellWins: number; sellWinRate: number }; score: number; validation?: { passed: boolean; sanity: boolean; plausibility: boolean; smoothness: number; wfvScore: number; wfvPassed: boolean; reasons: string[] } }>;
     totalCombinations: number;
+    stage1Count: number;
+    stage2Count: number;
+    validatedCount: number;
+    rejectedCount: number;
     elapsed: number;
   } | null;
   stressResults: Array<{ scenario: string; trades: Trade[]; maxDrawdown: number; finalPnl: number }> | null;

@@ -67,9 +67,14 @@ const PerformanceMetricsSection: React.FC = () => {
         bestParams: result.bestParams,
         bestMetrics: result.bestMetrics,
         bestDirectional: result.bestDirectional,
+        bestValidation: result.bestValidation,
         delta: result.delta,
         top5: result.top5,
         totalCombinations: result.gridSearch.totalCombinations,
+        stage1Count: result.gridSearch.stage1Count,
+        stage2Count: result.gridSearch.stage2Count,
+        validatedCount: result.gridSearch.validatedCount,
+        rejectedCount: result.gridSearch.rejectedCount,
         elapsed: result.gridSearch.elapsed,
       });
     } finally {
@@ -184,7 +189,7 @@ const PerformanceMetricsSection: React.FC = () => {
                 </Button>
                 {evaluationResults && (
                   <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', ml: 1 }}>
-                    {evaluationResults.totalCombinations} combos in {evaluationResults.elapsed.toFixed(0)}ms
+                    S1:{evaluationResults.stage1Count} + S2:{evaluationResults.stage2Count} = {evaluationResults.totalCombinations} combos · {evaluationResults.elapsed.toFixed(0)}ms · {evaluationResults.validatedCount}✓ {evaluationResults.rejectedCount}✗
                   </Typography>
                 )}
               </Box>
@@ -192,10 +197,24 @@ const PerformanceMetricsSection: React.FC = () => {
               {evaluationResults && (
                 <>
                   {/* Best Parameters */}
-                  <Box sx={{ bgcolor: 'rgba(0,255,136,0.06)', borderRadius: 1, p: 1.5, border: '1px solid rgba(0,255,136,0.15)' }}>
-                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', letterSpacing: '0.08em', fontWeight: 700 }}>
-                      BEST PARAMETERS
-                    </Typography>
+                  <Box sx={{
+                    bgcolor: evaluationResults.bestValidation?.passed ? 'rgba(0,255,136,0.06)' : 'rgba(255,170,0,0.06)',
+                    borderRadius: 1, p: 1.5,
+                    border: `1px solid ${evaluationResults.bestValidation?.passed ? 'rgba(0,255,136,0.15)' : 'rgba(255,170,0,0.2)'}`,
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', letterSpacing: '0.08em', fontWeight: 700 }}>
+                        BEST PARAMETERS
+                      </Typography>
+                      <Typography variant="caption" sx={{
+                        color: evaluationResults.bestValidation?.passed ? '#00ff88' : '#ffaa00',
+                        fontWeight: 700, fontSize: '0.7rem',
+                        bgcolor: evaluationResults.bestValidation?.passed ? 'rgba(0,255,136,0.12)' : 'rgba(255,170,0,0.12)',
+                        px: 0.8, py: 0.2, borderRadius: 0.5,
+                      }}>
+                        {evaluationResults.bestValidation?.passed ? '✓ VALIDATED' : evaluationResults.bestValidation ? '⚠ UNVALIDATED' : '— NO WFV DATA'}
+                      </Typography>
+                    </Box>
                     <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
                       <Box>
                         <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)' }}>TP</Typography>
@@ -222,6 +241,21 @@ const PerformanceMetricsSection: React.FC = () => {
                         </Typography>
                       </Box>
                     </Box>
+                    {evaluationResults.bestValidation && (
+                      <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)' }}>
+                          WFV: {evaluationResults.bestValidation.wfvScore.toFixed(2)} {evaluationResults.bestValidation.wfvPassed ? '✓' : '✗'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)' }}>
+                          Smooth: {evaluationResults.bestValidation.smoothness.toFixed(3)}
+                        </Typography>
+                        {!evaluationResults.bestValidation.passed && evaluationResults.bestValidation.reasons.length > 0 && (
+                          <Typography variant="caption" sx={{ color: '#ffaa00' }}>
+                            {evaluationResults.bestValidation.reasons[0]}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
                   </Box>
 
                   {/* Best Metrics */}
