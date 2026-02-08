@@ -156,13 +156,20 @@ class RiskManager {
       allowed = false;
     }
 
-    const nextPosition = this.portfolioState.position + request.direction * request.size;
-    if (Math.abs(nextPosition) > this.config.maxPositionSize) {
-      reasons.push('Position size exceeds limit');
+    // Clamp size to available position capacity (direction-aware)
+    const currentPos = this.portfolioState.position;
+    const isReducing = (request.direction === -1 && currentPos > 0) || (request.direction === 1 && currentPos < 0);
+    const availableSize = isReducing
+      ? Math.abs(currentPos)  // can close up to full position
+      : this.config.maxPositionSize - Math.abs(currentPos); // remaining capacity
+    const adjustedSize = Math.min(Math.abs(request.size), Math.max(0, availableSize));
+
+    if (adjustedSize <= 0) {
+      reasons.push('Position size limit reached — no capacity');
       allowed = false;
     }
 
-    const notional = request.notional ?? Math.abs(request.size * request.price);
+    const notional = request.notional ?? Math.abs(adjustedSize * request.price);
     if (notional > this.config.maxNotionalExposure) {
       reasons.push('Notional exposure exceeds limit');
       allowed = false;
@@ -192,9 +199,6 @@ class RiskManager {
     }
 
     this.recordOrder(now);
-
-    const availableSize = this.config.maxPositionSize - Math.abs(this.portfolioState.position);
-    const adjustedSize = Math.min(Math.abs(request.size), Math.max(0, availableSize));
 
     return {
       allowed: true,

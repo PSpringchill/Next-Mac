@@ -91,6 +91,8 @@ class Backtester {
       // Execute trade based on signal
       if (signal.direction !== 0 && signal.confidence > 0.3) {
         const direction = signal.direction > 0 ? 1 : -1;
+        // Skip SELL when no position to close
+        if (direction === -1 && position <= 0) continue;
         const size = Math.abs((portfolio * signal.strength * 0.1) / marketData.price); // 10% risk budget
 
         const execution = this.executionEngine.executeOrder(
@@ -162,6 +164,21 @@ class Backtester {
           this.riskManager.updatePortfolioState(portfolioState);
         }
       }
+    }
+
+    // Force-close any open position at last price to realize PnL
+    if (position > 0 && data.length > 0) {
+      const lastPrice = data[data.length - 1].price;
+      const realizedPnl = position * (lastPrice - avgEntryPrice);
+      portfolio += position * lastPrice;
+      trades.push({
+        type: 'SELL',
+        price: lastPrice,
+        size: position,
+        timestamp: data[data.length - 1].timestamp,
+        pnl: realizedPnl
+      });
+      position = 0;
     }
     
     return this.calculateMetrics(trades, portfolio);

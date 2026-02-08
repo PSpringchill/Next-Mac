@@ -12,15 +12,7 @@ class StressTestHarness {
   private engine: PaperTradingEngine;
 
   constructor(engine?: PaperTradingEngine) {
-    const defaultEngine = new PaperTradingEngine({
-      processMarketData: async () => ({
-        direction: 0,
-        strength: 0,
-        confidence: 0,
-        timestamp: Date.now()
-      })
-    } as any);
-    this.engine = engine ?? defaultEngine;
+    this.engine = engine ?? new PaperTradingEngine();
   }
 
   async runScenario(scenario: string, data: MarketData[]): Promise<StressTestResult> {
@@ -94,21 +86,34 @@ class StressTestHarness {
     return data;
   }
 
+  private tickCounter = 0;
+
   private makeMarketTick(price: number): MarketData {
+    this.tickCounter++;
+    const spread = price * 0.001; // 0.1% spread
+    const bestBid = price - spread / 2;
+    const bestAsk = price + spread / 2;
+
+    // Generate 10 levels of depth
+    const bids: [string, string][] = [];
+    const asks: [string, string][] = [];
+    for (let i = 0; i < 10; i++) {
+      const bidVol = 5 + Math.random() * 15;
+      const askVol = 5 + Math.random() * 15;
+      bids.push([(bestBid - i * spread * 0.5).toFixed(4), bidVol.toFixed(4)]);
+      asks.push([(bestAsk + i * spread * 0.5).toFixed(4), askVol.toFixed(4)]);
+    }
+
     return {
-      timestamp: Date.now(),
-      price,
-      orderBook: {
-        lastUpdateId: 1,
-        bids: [[(price - 0.5).toFixed(2), '1'] as [string, string]],
-        asks: [[(price + 0.5).toFixed(2), '1'] as [string, string]]
-      },
+      timestamp: Date.now() + this.tickCounter * 500,
+      price: bestAsk,
+      orderBook: { lastUpdateId: this.tickCounter, bids, asks },
       openInterest: {
-        openInterest: '1000',
+        openInterest: '50000',
         symbol: 'BTCUSDT',
-        time: Date.now()
+        time: Date.now() + this.tickCounter * 500
       },
-      fundingRate: 0.0001
+      fundingRate: 0
     };
   }
 }

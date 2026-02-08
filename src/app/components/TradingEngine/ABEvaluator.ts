@@ -71,12 +71,19 @@ class MDPTradingEngine implements TradingEngineLike {
       }
     }
 
-    const direction = action <= 4 ? -1 : action <= 9 ? 0 : 1;
-    const strength = action <= 4 ? (5 - action) / 5 : action >= 10 ? (action - 9) / 5 : 0.1;
+    // Epsilon-greedy: 50% exploration so untrained model still generates trades
+    if (Math.random() < 0.5) {
+      action = Math.floor(Math.random() * values.length);
+      maxValue = values[action] ?? 0;
+    }
+
+    // Narrower hold zone: 0-5 sell, 6-8 hold, 9-14 buy
+    const direction = action <= 5 ? -1 : action <= 8 ? 0 : 1;
+    const strength = action <= 5 ? (6 - action) / 6 : action >= 9 ? (action - 8) / 6 : 0.1;
 
     // Sigmoid normalization: maps any Q-value range to (0, 1)
     const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
-    const confidence = sigmoid(maxValue * 2); // scale for sensitivity
+    const confidence = Math.max(0.35, sigmoid(maxValue * 2)); // floor at 0.35 for evaluation
 
     return {
       direction,
