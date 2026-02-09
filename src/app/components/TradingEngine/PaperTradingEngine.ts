@@ -438,8 +438,21 @@ class PaperTradingEngine extends EventEmitter {
     // ─── Exit Evaluation (if we have an open position) ────────────────────
     if (this.position !== 0 && this.lastEnsemble) {
       const posDir: 1 | -1 = this.position > 0 ? 1 : -1;
-      const tpPrice = this.lastATIS?.tp?.price ?? null;
-      const slPrice = this.lastATIS?.sl?.price ?? null;
+      // Prefer RadarVector TP/SL when ESTABLISH, fallback to ATIS
+      const rv = this.lastRadarVector;
+      const rvEstablished = rv?.status === 'ESTABLISH';
+      let tpPrice: number | null = this.lastATIS?.tp?.price ?? null;
+      let slPrice: number | null = this.lastATIS?.sl?.price ?? null;
+      if (rvEstablished && rv && rv.tpPct > 0) {
+        const isSellSide = rv.dominantSide === 'SELL'
+          || (rv.dominantSide === 'NEUTRAL' && posDir === -1);
+        tpPrice = isSellSide
+          ? marketData.price * (1 - rv.tpPct / 100)
+          : marketData.price * (1 + rv.tpPct / 100);
+        slPrice = isSellSide
+          ? marketData.price * (1 + rv.slPct / 100)
+          : marketData.price * (1 - rv.slPct / 100);
+      }
       const maxExposure = this.portfolio * 0.5; // 50% max exposure
       const portfolioExposure = Math.abs(this.position * marketData.price);
 
@@ -488,8 +501,18 @@ class PaperTradingEngine extends EventEmitter {
     const gradientBlocked = surpriseState.shouldBlockTrade;
     const hmmBlocked = hmmFilter.blocked;
 
+    // RadarVector directional filter: block entries that contradict ESTABLISH dominant side
+    const rvEntry = this.lastRadarVector;
+    const rvEstablishedEntry = rvEntry?.status === 'ESTABLISH';
+    let radarBlocked = false;
+    if (rvEstablishedEntry && rvEntry && rvEntry.dominantSide !== 'NEUTRAL') {
+      const ensDir = this.lastEnsemble.direction;
+      if (rvEntry.dominantSide === 'BUY' && ensDir < 0) radarBlocked = true;
+      if (rvEntry.dominantSide === 'SELL' && ensDir > 0) radarBlocked = true;
+    }
+
     const ensembleShouldEnter = this.lastEnsemble.shouldEnter && this.lastEnsemble.direction !== 0;
-    const noBlockers = !alphaBlocked && !gradientBlocked && !hmmBlocked;
+    const noBlockers = !alphaBlocked && !gradientBlocked && !hmmBlocked && !radarBlocked;
 
     if (noBlockers && ensembleShouldEnter && this.position === 0) {
       const direction = this.lastEnsemble.direction as 1 | -1;
@@ -497,7 +520,14 @@ class PaperTradingEngine extends EventEmitter {
       const paretoMultiplier = this.lastParetoState
         ? this.lastParetoState.positionSizeMultiplier : 1.0;
       const riskPerTrade = 0.02; // 2% of account
-      const baseSize = Math.abs((this.portfolio * riskPerTrade * ensembleConfidence) / marketData.price);
+      // Boost confidence when RadarVector ESTABLISH aligns with entry direction
+      const rvBoost = rvEstablishedEntry && rvEntry
+        && (rvEntry.dominantSide === 'NEUTRAL'
+          || (rvEntry.dominantSide === 'BUY' && direction > 0)
+          || (rvEntry.dominantSide === 'SELL' && direction < 0))
+        ? 1.15 : 1.0;
+      const boostedConfidence = Math.min(1.0, ensembleConfidence * rvBoost);
+      const baseSize = Math.abs((this.portfolio * riskPerTrade * boostedConfidence) / marketData.price);
       const size = baseSize * paretoMultiplier;
 
       const executionResult = this.executionEngine.executeOrder(
