@@ -625,7 +625,7 @@ const CockpitPanel: React.FC = () => {
         p: 1.5,
       }}>
         <Box sx={{ display: 'flex', gap: 2, p: 0.5, alignItems: 'flex-start', justifyContent: 'center' }}>
-          <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} radarVector={radarVector} onScaleUp={handleScaleUp} onScaleDown={handleScaleDown} />
+          <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} onScaleUp={handleScaleUp} onScaleDown={handleScaleDown} />
           <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} />
         </Box>
         <FeatureRadar featureWeights={featureWeights} />

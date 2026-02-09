@@ -33,8 +33,8 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
       <Typography sx={{ color: ECAM.WHITE, fontSize: '0.7rem', letterSpacing: '0.12em', mb: 0.5, fontWeight: 700 }}>
         ATT — VOLUME PROFILE
       </Typography>
-      <svg width="100%" height="100%" viewBox="0 0 420 400" style={{ maxWidth: 420 }}>
-        <rect x="0" y="0" width="420" height="400" fill="rgba(5,5,10,0.9)" rx="4" />
+      <svg width="100%" height="100%" viewBox="0 0 420 405" style={{ maxWidth: 420 }}>
+        <rect x="0" y="0" width="420" height="405" fill="rgba(5,5,10,0.9)" rx="4" />
 
         {/* Dynamic Regime badge — top center */}
         {dynamicRegime && (
@@ -181,8 +181,18 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
           </g>
         )}
 
+        {/* Transition status — bottom left */}
+        {dynamicRegime && dynamicRegime.transitionPriceUp > 0 && (
+          <g>
+            <rect x="4" y="340" width="120" height="34" rx="3" fill="rgba(0,0,0,0.7)" stroke={dynamicRegime.reversalRisk ? ECAM.AMBER : 'rgba(255,255,255,0.15)'} strokeWidth="1" />
+            <text x="10" y="354" fill={dynamicRegime.reversalRisk ? ECAM.AMBER : ECAM.DIM} fontSize="8" fontFamily="monospace" fontWeight="bold">TRANSITION</text>
+            <text x="10" y="368" fill={ECAM.GREEN} fontSize="9" fontFamily="monospace">▲{dynamicRegime.transitionPriceUp.toFixed(2)}</text>
+            <text x="72" y="368" fill={ECAM.RED} fontSize="9" fontFamily="monospace">▼{dynamicRegime.transitionPriceDown.toFixed(2)}</text>
+          </g>
+        )}
+
         {/* Volume summary */}
-        <text x="180" y="370" textAnchor="middle" fill={ECAM.DIM} fontSize="10" fontFamily="monospace">
+        <text x="180" y="390" textAnchor="middle" fill={ECAM.DIM} fontSize="10" fontFamily="monospace">
           BID {volumeProfile.totalBidVol.toFixed(1)} | ASK {volumeProfile.totalAskVol.toFixed(1)}
         </text>
       </svg>

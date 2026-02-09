@@ -23,6 +23,8 @@ export interface RegimeResult {
   volatilityRatio: number;
   momentum: number;
   thresholds: ThresholdSet;
+  transitionPriceUp: number;   // Price at which regime transitions upward
+  transitionPriceDown: number; // Price at which regime transitions downward
 }
 
 // ─── DynamicThresholds ───────────────────────────────────────────────────────
@@ -187,6 +189,11 @@ class DynamicThresholds {
       strength = 1.0 - (Math.abs(momentum) / thresholds.momentumHigh);
     }
 
+    // Compute transition prices: where momentum crosses momentumHigh boundary
+    const basePrice = this.priceHistory.length >= 2 ? this.priceHistory[0] : currentPrice;
+    const transitionPriceUp = basePrice * (1 + thresholds.momentumHigh);
+    const transitionPriceDown = basePrice * (1 - thresholds.momentumHigh);
+
     return {
       regime,
       strength: Math.max(0, Math.min(1, strength)),
@@ -194,6 +201,8 @@ class DynamicThresholds {
       volatilityRatio,
       momentum,
       thresholds,
+      transitionPriceUp,
+      transitionPriceDown,
     };
   }
 

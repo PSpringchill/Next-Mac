@@ -2,17 +2,19 @@ import React, { useState } from 'react';
 import { Box, Typography, IconButton } from '@mui/material';
 import { ECAM, SmoothedTechData } from './ecamTheme';
 import type { RadarVectorState } from '../TradingEngine/RadarVector';
+import type { RegimeResult } from '../TradingEngine/DynamicThresholds';
 
 interface SpeedTapeProps {
   smoothedTech: SmoothedTechData;
   wallRangePct: number;
   priceRoC: number;
   radarVector?: RadarVectorState | null;
+  dynamicRegime?: RegimeResult | null;
   onScaleUp?: () => void;
   onScaleDown?: () => void;
 }
 
-const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC, radarVector, onScaleUp, onScaleDown }) => {
+const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC, radarVector, dynamicRegime, onScaleUp, onScaleDown }) => {
   const [hiDec, setHiDec] = useState(false);
   const fmt = (p: number) => hiDec && p < 1.0 ? p.toFixed(4) : p.toFixed(2);
   const rv = radarVector;
@@ -122,6 +124,21 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
           <text x="5" y={slY + 10} fill={slColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{fmt(slPrice)}</text>
         </g>
       );
+    }
+  }
+
+  // Transition price markers from DynamicRegime
+  if (dynamicRegime && dynamicRegime.transitionPriceUp > 0) {
+    const trColor = '#ff44ff';
+    const tUpY = priceToY(dynamicRegime.transitionPriceUp);
+    const tDnY = priceToY(dynamicRegime.transitionPriceDown);
+    if (tUpY > tapeY0 && tUpY < tapeY0 + tapeH) {
+      elements.push(<line key="tr-up-line" x1="60" y1={tUpY} x2="140" y2={tUpY} stroke={trColor} strokeWidth="1" strokeDasharray="3,4" opacity="0.6" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<text key="tr-up-lbl" x="144" y={tUpY + 4} fill={trColor} fontSize="8" fontFamily="monospace" fontWeight="bold" opacity="0.8" style={{ transition: 'y 0.8s ease-out' }}>T▲</text>);
+    }
+    if (tDnY > tapeY0 && tDnY < tapeY0 + tapeH) {
+      elements.push(<line key="tr-dn-line" x1="60" y1={tDnY} x2="140" y2={tDnY} stroke={trColor} strokeWidth="1" strokeDasharray="3,4" opacity="0.6" style={{ transition: 'y1 0.8s ease-out, y2 0.8s ease-out' }} />);
+      elements.push(<text key="tr-dn-lbl" x="144" y={tDnY + 4} fill={trColor} fontSize="8" fontFamily="monospace" fontWeight="bold" opacity="0.8" style={{ transition: 'y 0.8s ease-out' }}>T▼</text>);
     }
   }
 
