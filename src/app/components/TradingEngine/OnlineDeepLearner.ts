@@ -23,6 +23,10 @@ class OnlineDeepLearner {
   private featureHistory: number[][] = [];
   private targetHistory: number[] = [];
   private readonly correlationWindow: number = 100;
+
+  // Ring buffer for multi-horizon time-shifted targets
+  private priceChangeRing: number[] = [];
+  private readonly maxHorizon: number = 100;
   
   private readonly featureNames = [
     'bid_ask_spread', 'order_flow_toxicity', 'price_impact',
@@ -135,11 +139,25 @@ class OnlineDeepLearner {
       this.targetHistory.shift();
     }
 
-    // Store experience
+    // Track cumulative price changes for multi-horizon targets
+    this.priceChangeRing.push(actualPriceChange);
+    if (this.priceChangeRing.length > this.maxHorizon + 1) {
+      this.priceChangeRing.shift();
+    }
+
+    // Compute cumulative return over different horizons
+    const ringLen = this.priceChangeRing.length;
+    const cum1 = actualPriceChange;
+    const cum10 = ringLen >= 10
+      ? this.priceChangeRing.slice(-10).reduce((s, v) => s + v, 0) : cum1;
+    const cum100 = ringLen >= 100
+      ? this.priceChangeRing.slice(-100).reduce((s, v) => s + v, 0) : cum10;
+
+    // Store experience with per-horizon class labels
     this.experienceReplay.add({
       state: features,
-      action: this.priceChangeToClass(actualPriceChange),
-      reward: 0, 
+      action: this.priceChangeToClass(cum1),
+      reward: this.priceChangeToClass(cum10) + this.priceChangeToClass(cum100) * 0.01,
       nextState: features,
       done: false
     });
@@ -200,7 +218,29 @@ class OnlineDeepLearner {
         4: 5.0  // Strong Buy
       };
 
-      const history = await this.model.fit(states, [targets, targets, targets], {
+      // Build per-horizon targets from stored multi-horizon labels
+      const { targets10, targets100 } = tf.tidy(() => {
+        const raw10 = tf.tensor2d(batch.map(e => {
+          const cls10 = Math.round(e.reward) % 5;
+          const t = [0, 0, 0, 0, 0];
+          t[Math.max(0, Math.min(4, cls10))] = 1;
+          return t;
+        }));
+        const raw100 = tf.tensor2d(batch.map(e => {
+          const cls100 = Math.round(e.reward * 100) % 5;
+          const t = [0, 0, 0, 0, 0];
+          t[Math.max(0, Math.min(4, cls100))] = 1;
+          return t;
+        }));
+        const eps = 0.1;
+        const sm = tf.scalar(eps / 5);
+        return {
+          targets10: raw10.mul(1 - eps).add(sm),
+          targets100: raw100.mul(1 - eps).add(sm),
+        };
+      });
+
+      const history = await this.model.fit(states, [targets, targets10, targets100], {
         epochs: 1,
         batchSize: batchSize,
         verbose: 0,
@@ -228,6 +268,8 @@ class OnlineDeepLearner {
       
       states.dispose();
       targets.dispose();
+      targets10.dispose();
+      targets100.dispose();
     } finally {
       this.isFitting = false;
     }

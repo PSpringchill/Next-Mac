@@ -110,48 +110,60 @@ class A3CAgent {
   }
   
   async train(batch: Experience[]): Promise<void> {
+    // Manual tensor management — tf.tidy is synchronous and cannot wrap async ops
     const states = tf.tensor2d(batch.map(e => e.state));
     const actions = tf.tensor1d(batch.map(e => e.action));
     const rewards = tf.tensor1d(batch.map(e => e.reward));
     const nextStates = tf.tensor2d(batch.map(e => e.nextState));
     const dones = tf.tensor1d(batch.map(e => e.done ? 0 : 1));
     
-    await tf.tidy(() => {
+    const intermediates: tf.Tensor[] = [];
+    try {
       const values = this.criticModel.predict(states) as tf.Tensor;
       const nextValues = this.criticModel.predict(nextStates) as tf.Tensor;
+      intermediates.push(values, nextValues);
       
       // Calculate advantages
-      const tdTargets = rewards.add(
-        nextValues.squeeze().mul(dones).mul(this.gamma)
-      );
-      const advantages = tdTargets.sub(values.squeeze());
+      const nextValSqueezed = nextValues.squeeze();
+      const discounted = nextValSqueezed.mul(dones).mul(this.gamma);
+      const tdTargets = rewards.add(discounted);
+      const valSqueezed = values.squeeze();
+      const advantages = tdTargets.sub(valSqueezed);
+      intermediates.push(nextValSqueezed, discounted, tdTargets, valSqueezed, advantages);
       
       // Actor loss
-      const logProbs = tf.log(
-        (this.actorModel.predict(states) as tf.Tensor).add(1e-8)
-      );
+      const actorPred = this.actorModel.predict(states) as tf.Tensor;
+      const logProbs = tf.log(actorPred.add(1e-8));
       const actionIndices = tf.cast(actions, 'int32');
-      const selectedLogProbs = tf.gatherND(logProbs, tf.stack([tf.range(0, actions.shape[0]), actionIndices], 1));
+      const indexTensor = tf.stack([tf.range(0, actions.shape[0]), actionIndices], 1);
+      const selectedLogProbs = tf.gatherND(logProbs, indexTensor);
       const actorLoss = selectedLogProbs.mul(advantages).mul(-1).mean();
+      intermediates.push(actorPred, logProbs, actionIndices, indexTensor, selectedLogProbs, actorLoss);
       
       // Critic loss
-      const criticLoss = tf.losses.meanSquaredError(tdTargets, values.squeeze());
+      const criticLoss = tf.losses.meanSquaredError(tdTargets, valSqueezed) as tf.Tensor;
+      intermediates.push(criticLoss);
       
       // Total loss with entropy regularization
-      const entropy = logProbs.mul(tf.exp(logProbs)).sum(1).mul(-1).mean();
+      const expLogProbs = tf.exp(logProbs);
+      const entropy = logProbs.mul(expLogProbs).sum(1).mul(-1).mean();
       const totalLoss = actorLoss.add(criticLoss).sub(entropy.mul(this.entropy_beta));
+      intermediates.push(expLogProbs, entropy, totalLoss);
       
-      // Update weights
-      const grads = tf.variableGrads(() => totalLoss.mean());
+      // Update weights via gradient tape
+      const lossForGrad = totalLoss.mean().asScalar();
+      intermediates.push(lossForGrad);
+      const grads = tf.variableGrads(() => lossForGrad);
       this.optimizer.applyGradients(grads.grads);
       Object.values(grads.grads).forEach(grad => grad?.dispose());
-    });
-
-    states.dispose();
-    nextStates.dispose();
-    actions.dispose();
-    rewards.dispose();
-    dones.dispose();
+    } finally {
+      intermediates.forEach(t => t.dispose());
+      states.dispose();
+      nextStates.dispose();
+      actions.dispose();
+      rewards.dispose();
+      dones.dispose();
+    }
   }
 
   private featuresToArray(features: MarketFeatures): number[] {
