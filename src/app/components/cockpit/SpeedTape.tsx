@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Typography, IconButton } from '@mui/material';
 import { ECAM, SmoothedTechData } from './ecamTheme';
 import type { RadarVectorState } from '../TradingEngine/RadarVector';
@@ -13,6 +13,8 @@ interface SpeedTapeProps {
 }
 
 const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC, radarVector, onScaleUp, onScaleDown }) => {
+  const [hiDec, setHiDec] = useState(false);
+  const fmt = (p: number) => hiDec && p < 1.0 ? p.toFixed(4) : p.toFixed(2);
   const rv = radarVector;
   const rvEstablished = rv?.status === 'ESTABLISH';
   const mid = smoothedTech.midPrice;
@@ -49,7 +51,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
     if (isMajor) {
       elements.push(
         <text key={`lbl-${i}`} x="48" y={y + 4} textAnchor="end" fill="rgba(255,255,255,0.45)" fontSize="9" fontFamily="monospace">
-          {price.toFixed(2)}
+          {fmt(price)}
         </text>
       );
     }
@@ -107,7 +109,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
         <g key="tp-tag" style={{ transition: 'transform 0.8s ease-out' }}>
           <rect x="0" y={tpY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={tpColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
           <text x="5" y={tpY - 3} fill={tpColor} fontSize="9" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>TP {rv.tpPct.toFixed(2)}%</text>
-          <text x="5" y={tpY + 10} fill={tpColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{tpPrice.toFixed(2)}</text>
+          <text x="5" y={tpY + 10} fill={tpColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{fmt(tpPrice)}</text>
         </g>
       );
     }
@@ -117,7 +119,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
         <g key="sl-tag" style={{ transition: 'transform 0.8s ease-out' }}>
           <rect x="0" y={slY - 14} width="56" height="28" rx="3" fill="rgba(0,0,0,0.9)" stroke={slColor} strokeWidth="1.2" style={{ transition: 'y 0.8s ease-out' }} />
           <text x="5" y={slY - 3} fill={slColor} fontSize="9" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>SL {rv.slPct.toFixed(2)}%</text>
-          <text x="5" y={slY + 10} fill={slColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{slPrice.toFixed(2)}</text>
+          <text x="5" y={slY + 10} fill={slColor} fontSize="10" fontFamily="monospace" fontWeight="bold" style={{ transition: 'y 0.8s ease-out' }}>{fmt(slPrice)}</text>
         </g>
       );
     }
@@ -129,7 +131,7 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
     <g key="price-marker" style={{ transition: 'transform 0.8s ease-out' }}>
       <polygon points={`${62},${midY} ${72},${midY - 11} ${128},${midY - 11} ${138},${midY} ${128},${midY + 11} ${72},${midY + 11}`} fill="rgba(0,0,0,0.95)" stroke={ECAM.GREEN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }} />
       <text x="100" y={midY + 5} textAnchor="middle" fill={ECAM.GREEN} fontSize="13" fontWeight="bold" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>
-        {mid.toFixed(2)}
+        {fmt(mid)}
       </text>
     </g>
   );
@@ -175,6 +177,11 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
       <svg width="100%" height="100%" viewBox="0 0 200 380" style={{ maxWidth: 200 }}>
         <rect x="0" y="0" width="200" height="380" fill="rgba(5,5,10,0.9)" rx="4" />
         {elements}
+        {/* D toggle — bottom left */}
+        <g onClick={() => setHiDec(d => !d)} style={{ cursor: 'pointer' }}>
+          <rect x="4" y="356" width="20" height="18" rx="3" fill={hiDec ? 'rgba(0,221,255,0.15)' : 'rgba(255,255,255,0.04)'} stroke={hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.2)'} strokeWidth="1.2" />
+          <text x="14" y="369" textAnchor="middle" fill={hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.4)'} fontSize="10" fontFamily="monospace" fontWeight="bold">D</text>
+        </g>
       </svg>
     </Box>
   );

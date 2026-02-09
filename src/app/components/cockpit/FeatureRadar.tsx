@@ -59,7 +59,7 @@ const FeatureRadar: React.FC<FeatureRadarProps> = ({ featureWeights }) => {
             <polygon
               points={featureWeights.map((fw, i) => {
                 const angle = -Math.PI / 2 + i * angleStep;
-                const r = maxR * Math.max(0.05, fw.value);
+                const r = maxR * Math.min(1, Math.max(0.05, fw.value));
                 return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
               }).join(' ')}
               fill="rgba(0,221,255,0.12)" stroke={ECAM.CYAN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }}
@@ -68,10 +68,11 @@ const FeatureRadar: React.FC<FeatureRadarProps> = ({ featureWeights }) => {
             {/* Data points with value labels */}
             {featureWeights.map((fw, i) => {
               const angle = -Math.PI / 2 + i * angleStep;
-              const r = maxR * Math.max(0.05, fw.value);
+              const clamped = Math.min(1, Math.max(0.05, fw.value));
+              const r = maxR * clamped;
               const px = cx + r * Math.cos(angle);
               const py = cy + r * Math.sin(angle);
-              const dotColor = fw.value > 0.7 ? ECAM.AMBER : fw.value > 0.4 ? ECAM.GREEN : ECAM.CYAN;
+              const dotColor = fw.value > 1.0 ? ECAM.RED : fw.value > 0.7 ? ECAM.AMBER : fw.value > 0.4 ? ECAM.GREEN : ECAM.CYAN;
               const vlx = cx + (r + 16) * Math.cos(angle);
               const vly = cy + (r + 16) * Math.sin(angle);
               return (
