@@ -218,7 +218,11 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
         {/* Localizer (horizontal) inside bottom of circle, GS (vertical) inside right of circle */}
         {(() => {
           const lr = linReg;
-          const hasILS = lr && lr.rSquared > 0;
+          const rv = radarVector;
+          // ILS establishes ONLY when RadarVector confirms Buy or Sell
+          const rvEstablished = rv?.status === 'ESTABLISH';
+          const rvHasDirection = rvEstablished && rv?.dominantSide !== 'NEUTRAL';
+          const hasILS = lr && lr.rSquared > 0 && rvHasDirection;
           const dotSp = 16;
           const dotR = 2.5;
           const dSz = 5;
@@ -240,11 +244,13 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
           const stable = lr?.glideSlopeStable ?? true;
           const dhLabel = rSq > 0.85 ? 'III' : rSq > 0.7 ? 'II' : rSq > 0.5 ? 'I' : '—';
           const dhCol = rSq > 0.85 ? ECAM.GREEN : rSq > 0.7 ? ECAM.CYAN : rSq > 0.5 ? ECAM.AMBER : ECAM.RED;
-          const sDir = (lr?.slope ?? 0) > 0 ? 'LONG' : (lr?.slope ?? 0) < 0 ? 'SHORT' : 'HOLD';
+          // Direction from RadarVector dominant side when established, fallback to slope
+          const sDir = rvHasDirection ? (rv!.dominantSide === 'BUY' ? 'LONG' : 'SHORT')
+            : (lr?.slope ?? 0) > 0 ? 'LONG' : (lr?.slope ?? 0) < 0 ? 'SHORT' : 'HOLD';
           const sDirCol = sDir === 'LONG' ? ECAM.GREEN : sDir === 'SHORT' ? ECAM.RED : ECAM.DIM;
 
           return (
-            <g opacity={hasILS ? 1 : 0.3}>
+            <g opacity={hasILS ? 1 : 0.15}>
               {/* ─── LOCALIZER (horizontal, inside bottom of circle) ─── */}
               <line x1={acx - 2 * dotSp - 4} y1={locY} x2={acx + 2 * dotSp + 4} y2={locY}
                 stroke={ECAM.MAGENTA} strokeWidth="1.5" opacity="0.5" />

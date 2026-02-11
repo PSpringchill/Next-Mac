@@ -2,10 +2,12 @@ import React from 'react';
 import { Box, Typography } from '@mui/material';
 import { ECAM } from './ecamTheme';
 import type { LinRegState } from '../TradingEngine/LinearRegressionTarget';
+import type { RadarVectorState } from '../TradingEngine/RadarVector';
 
 interface ILSIndicatorProps {
   linReg?: LinRegState | null;
   currentPrice?: number;
+  radarVector?: RadarVectorState | null;
 }
 
 // ─── Real ILS-inspired Instrument Landing System indicator ───
@@ -14,9 +16,13 @@ interface ILSIndicatorProps {
 // Decision Height: R² quality threshold
 // Beam quality: R² → beam width
 
-const ILSIndicator: React.FC<ILSIndicatorProps> = ({ linReg, currentPrice }) => {
+const ILSIndicator: React.FC<ILSIndicatorProps> = ({ linReg, currentPrice, radarVector }) => {
   const lr = linReg;
-  const hasData = lr && lr.rSquared > 0;
+  const rv = radarVector;
+  // ILS establishes ONLY when RadarVector confirms Buy or Sell
+  const rvEstablished = rv?.status === 'ESTABLISH';
+  const rvHasDirection = rvEstablished && rv?.dominantSide !== 'NEUTRAL';
+  const hasData = lr && lr.rSquared > 0 && rvHasDirection;
 
   // ─── Localizer: price deviation from regression line ───
   // Deviation = (currentPrice - priceTarget) / stdError, clamped to ±2 dots
@@ -42,7 +48,9 @@ const ILSIndicator: React.FC<ILSIndicatorProps> = ({ linReg, currentPrice }) => 
   const dhColor = rSq > 0.85 ? ECAM.GREEN : rSq > 0.7 ? ECAM.CYAN : rSq > 0.5 ? ECAM.AMBER : ECAM.RED;
 
   // ─── Approach mode ───
-  const slopeDir = (lr?.slope ?? 0) > 0 ? 'LONG' : (lr?.slope ?? 0) < 0 ? 'SHORT' : 'HOLD';
+  // Direction from RadarVector dominant side when established, fallback to slope
+  const slopeDir = rvHasDirection ? (rv!.dominantSide === 'BUY' ? 'LONG' : 'SHORT')
+    : (lr?.slope ?? 0) > 0 ? 'LONG' : (lr?.slope ?? 0) < 0 ? 'SHORT' : 'HOLD';
   const slopeDirColor = slopeDir === 'LONG' ? ECAM.GREEN : slopeDir === 'SHORT' ? ECAM.RED : ECAM.DIM;
 
   const cx = 120, cy = 120; // Center of the ILS cross
