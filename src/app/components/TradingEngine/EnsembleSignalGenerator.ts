@@ -42,6 +42,10 @@ export interface EnsembleConfig {
   exitThreshold: number;        // Ensemble score for exit (0.35)
   nbProbThreshold: number;      // Naive Bayes probability threshold (0.65)
 
+  // Hysteresis (MFC Layer 5)
+  hysteresisConfirmTicks: number; // Ticks of sustained signal before transition (default 300 ≈ 5min @ 1tick/s)
+  hysteresisBuffer: number;       // Score must exceed threshold by this buffer (default 0.05)
+
   // Component weights for ensemble score
   weights: {
     kalman: number;
@@ -69,6 +73,8 @@ const DEFAULT_CONFIG: EnsembleConfig = {
   entryThreshold: 0.65,
   exitThreshold: 0.35,
   nbProbThreshold: 0.65,
+  hysteresisConfirmTicks: 300,
+  hysteresisBuffer: 0.05,
   weights: {
     kalman: 0.15,
     currencyStrength: 0.10,
@@ -134,6 +140,11 @@ class EnsembleSignalGenerator {
   private currentPosition: 0 | 1 | -1 = 0; // 0=flat, 1=long, -1=short
   private entryPrice: number = 0;
   private entryEnsembleScore: number = 0;
+
+  // Hysteresis state: sustained direction confirmation
+  private hysteresisDir: 1 | -1 | 0 = 0;
+  private hysteresisTicks: number = 0;
+  private hysteresisConfirmed: boolean = false;
 
   constructor(config?: Partial<EnsembleConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -215,7 +226,32 @@ class EnsembleSignalGenerator {
       checks = longScore >= shortScore ? longChecks : shortChecks;
     }
 
-    const shouldEnter = allConditionsMet && ensembleScore >= this.config.entryThreshold;
+    // ─── Hysteresis: require sustained direction before allowing entry ────
+    const hysteresisThreshold = this.config.entryThreshold + this.config.hysteresisBuffer;
+    if (direction !== 0 && allConditionsMet && ensembleScore >= hysteresisThreshold) {
+      if (direction === this.hysteresisDir) {
+        this.hysteresisTicks++;
+      } else {
+        // Direction changed — reset counter
+        this.hysteresisDir = direction;
+        this.hysteresisTicks = 1;
+        this.hysteresisConfirmed = false;
+      }
+      if (this.hysteresisTicks >= this.config.hysteresisConfirmTicks) {
+        this.hysteresisConfirmed = true;
+      }
+    } else {
+      // Signal dropped below threshold+buffer — reset
+      this.hysteresisTicks = Math.max(0, this.hysteresisTicks - 1); // Decay slowly
+      if (this.hysteresisTicks === 0) {
+        this.hysteresisDir = 0;
+        this.hysteresisConfirmed = false;
+      }
+    }
+
+    const shouldEnter = allConditionsMet
+      && ensembleScore >= this.config.entryThreshold
+      && this.hysteresisConfirmed;
 
     this.prevKalmanVelocity = kalmanState.velocity;
 
@@ -578,6 +614,9 @@ class EnsembleSignalGenerator {
     this.currentPosition = 0;
     this.entryPrice = 0;
     this.entryEnsembleScore = 0;
+    this.hysteresisDir = 0;
+    this.hysteresisTicks = 0;
+    this.hysteresisConfirmed = false;
   }
 }
 

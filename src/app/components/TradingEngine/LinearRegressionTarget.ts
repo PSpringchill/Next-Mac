@@ -13,12 +13,19 @@ export interface LinRegState {
   stdError: number;      // Standard error of the regression
   direction: 1 | -1 | 0; // Slope direction
   strength: number;      // Normalized slope magnitude [0, 1]
+  // ILS Acceleration Guard (MFC Phase 2, Layer 4)
+  acceleration: number;  // 2nd derivative of slope (d²price/dt²)
+  glideSlopeStable: boolean; // false when acceleration reverses slope direction
 }
 
 class LinearRegressionTarget {
   private prices: number[] = [];
   private readonly windowSize: number;
   private readonly forecastHorizon: number;
+
+  // Slope history for acceleration (2nd derivative)
+  private slopeHistory: number[] = [];
+  private readonly slopeHistorySize: number = 10;
 
   constructor(windowSize: number = 30, forecastHorizon: number = 10) {
     this.windowSize = windowSize;
@@ -44,6 +51,7 @@ class LinearRegressionTarget {
         upperBand: this.prices[n - 1] ?? 0,
         lowerBand: this.prices[n - 1] ?? 0,
         stdError: 0, direction: 0, strength: 0,
+        acceleration: 0, glideSlopeStable: true,
       };
     }
 
@@ -64,6 +72,7 @@ class LinearRegressionTarget {
         slope: 0, intercept: p, rSquared: 0,
         priceTarget: p, upperBand: p, lowerBand: p,
         stdError: 0, direction: 0, strength: 0,
+        acceleration: 0, glideSlopeStable: true,
       };
     }
 
@@ -105,6 +114,20 @@ class LinearRegressionTarget {
 
     const direction: 1 | -1 | 0 = Math.abs(slope) < 1e-10 ? 0 : slope > 0 ? 1 : -1;
 
+    // ILS Acceleration Guard: 2nd derivative of slope
+    this.slopeHistory.push(slope);
+    if (this.slopeHistory.length > this.slopeHistorySize) {
+      this.slopeHistory.shift();
+    }
+    let acceleration = 0;
+    if (this.slopeHistory.length >= 2) {
+      const prev = this.slopeHistory[this.slopeHistory.length - 2];
+      acceleration = slope - prev;
+    }
+    // Glide slope is unstable when acceleration opposes slope direction
+    // (slope positive but decelerating, or slope negative but accelerating upward)
+    const glideSlopeStable = !(Math.abs(slope) > 1e-10 && Math.sign(acceleration) !== Math.sign(slope));
+
     return {
       slope,
       intercept,
@@ -115,6 +138,8 @@ class LinearRegressionTarget {
       stdError,
       direction,
       strength,
+      acceleration,
+      glideSlopeStable,
     };
   }
 
@@ -124,6 +149,7 @@ class LinearRegressionTarget {
 
   reset(): void {
     this.prices = [];
+    this.slopeHistory = [];
   }
 }
 

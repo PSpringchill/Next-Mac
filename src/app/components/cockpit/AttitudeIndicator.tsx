@@ -184,10 +184,10 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
         {/* Transition status — bottom left */}
         {dynamicRegime && dynamicRegime.transitionPriceUp > 0 && (
           <g>
-            <rect x="4" y="340" width="120" height="34" rx="3" fill="rgba(0,0,0,0.7)" stroke={dynamicRegime.reversalRisk ? ECAM.AMBER : 'rgba(255,255,255,0.15)'} strokeWidth="1" />
+            <rect x="4" y="340" width="148" height="34" rx="3" fill="rgba(0,0,0,0.7)" stroke={dynamicRegime.reversalRisk ? ECAM.AMBER : 'rgba(255,255,255,0.15)'} strokeWidth="1" />
             <text x="10" y="354" fill={dynamicRegime.reversalRisk ? ECAM.AMBER : ECAM.DIM} fontSize="8" fontFamily="monospace" fontWeight="bold">TRANSITION</text>
-            <text x="10" y="368" fill={ECAM.GREEN} fontSize="9" fontFamily="monospace">▲{dynamicRegime.transitionPriceUp.toFixed(2)}</text>
-            <text x="72" y="368" fill={ECAM.RED} fontSize="9" fontFamily="monospace">▼{dynamicRegime.transitionPriceDown.toFixed(2)}</text>
+            <text x="10" y="368" fill={ECAM.GREEN} fontSize="9" fontFamily="monospace">▲{dynamicRegime.transitionPriceUp.toFixed(4)}</text>
+            <text x="82" y="368" fill={ECAM.RED} fontSize="9" fontFamily="monospace">▼{dynamicRegime.transitionPriceDown.toFixed(4)}</text>
           </g>
         )}
 

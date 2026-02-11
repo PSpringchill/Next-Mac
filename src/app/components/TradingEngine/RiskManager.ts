@@ -14,6 +14,12 @@ export interface RiskConfig {
   killSwitchDailyLoss: number;
   killSwitchCooldown: number;
   killSwitchVolatility: number;
+  // Circuit Breaker thresholds
+  cb1DrawdownPct: number;       // L1: drawdown % in 60 min (default 0.05)
+  cb1HaltMinutes: number;       // L1: halt entries for N minutes (default 120)
+  cb2DrawdownPct: number;       // L2: drawdown % in 24h (default 0.10)
+  cb3PriceMovePct: number;      // L3: flash crash % move in 30s (default 0.05)
+  cb3WindowSeconds: number;     // L3: flash crash detection window (default 30)
 }
 
 export interface TradeRequest {
@@ -29,17 +35,30 @@ export interface MarketContext {
   regime?: MarketRegime;
 }
 
+export type CircuitBreakerLevel = 0 | 1 | 2 | 3;
+
+export interface CircuitBreakerState {
+  level: CircuitBreakerLevel;
+  activeSince: number | null;
+  reason: string | null;
+  stopMultiplier: number;       // 1.0 normal, 0.5 L1, 0.25 L3
+  positionSizeMultiplier: number; // 1.0 normal, 0.5 L2
+  entriesHalted: boolean;
+}
+
 export interface RiskCheckResult {
   allowed: boolean;
   reasons: string[];
   adjustedSize: number;
   killSwitchActivated: boolean;
+  circuitBreaker?: CircuitBreakerState;
 }
 
 export interface RiskStatus {
   killSwitchActive: boolean;
   killSwitchUntil: number | null;
   warnings: string[];
+  circuitBreaker: CircuitBreakerState;
 }
 
 const DEFAULT_CONFIG: RiskConfig = {
@@ -55,7 +74,12 @@ const DEFAULT_CONFIG: RiskConfig = {
   rangingRegimeMultiplier: 0.6,
   killSwitchDailyLoss: 8000,
   killSwitchCooldown: 30 * 60 * 1000,
-  killSwitchVolatility: 5.0
+  killSwitchVolatility: 5.0,
+  cb1DrawdownPct: 0.05,
+  cb1HaltMinutes: 120,
+  cb2DrawdownPct: 0.10,
+  cb3PriceMovePct: 0.05,
+  cb3WindowSeconds: 30,
 };
 
 const DEFAULT_PORTFOLIO_STATE: PortfolioState = {
@@ -77,6 +101,18 @@ class RiskManager {
   private orderTimestamps: number[] = [];
   private killSwitchUntil: number | null = null;
   private consecutiveLosses: number = 0;
+
+  // Circuit Breaker state
+  private cbLevel: CircuitBreakerLevel = 0;
+  private cbActiveSince: number | null = null;
+  private cbReason: string | null = null;
+  private cbHaltUntil: number | null = null;
+
+  // Price history for flash crash detection (L3)
+  private priceHistory: { price: number; timestamp: number }[] = [];
+
+  // Equity snapshots for rolling drawdown (L1: 60min, L2: 24h)
+  private equitySnapshots: { equity: number; timestamp: number }[] = [];
 
   constructor(config?: Partial<RiskConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -223,13 +259,111 @@ class RiskManager {
     return Math.min(1, Math.max(0, kelly * confidence * regimeMultiplier));
   }
 
+  // ─── Circuit Breaker System ─────────────────────────────────────────────
+
+  feedPrice(price: number, timestamp: number = Date.now()): void {
+    this.priceHistory.push({ price, timestamp });
+    // Keep only last 60 seconds of prices
+    const cutoff = timestamp - 60_000;
+    while (this.priceHistory.length > 0 && this.priceHistory[0].timestamp < cutoff) {
+      this.priceHistory.shift();
+    }
+  }
+
+  feedEquity(equity: number, timestamp: number = Date.now()): void {
+    this.equitySnapshots.push({ equity, timestamp });
+    // Keep only last 24 hours
+    const cutoff = timestamp - 24 * 60 * 60_000;
+    while (this.equitySnapshots.length > 0 && this.equitySnapshots[0].timestamp < cutoff) {
+      this.equitySnapshots.shift();
+    }
+  }
+
+  evaluateCircuitBreakers(timestamp: number = Date.now()): CircuitBreakerState {
+    // Check if existing halt has expired
+    if (this.cbHaltUntil && timestamp >= this.cbHaltUntil) {
+      this.cbLevel = 0;
+      this.cbActiveSince = null;
+      this.cbReason = null;
+      this.cbHaltUntil = null;
+    }
+
+    // L3: Flash crash — price moved > cb3PriceMovePct in cb3WindowSeconds
+    if (this.priceHistory.length >= 2) {
+      const windowCutoff = timestamp - this.config.cb3WindowSeconds * 1000;
+      const recentPrices = this.priceHistory.filter(p => p.timestamp >= windowCutoff);
+      if (recentPrices.length >= 2) {
+        const oldest = recentPrices[0].price;
+        const newest = recentPrices[recentPrices.length - 1].price;
+        const movePct = Math.abs(newest - oldest) / oldest;
+        if (movePct >= this.config.cb3PriceMovePct) {
+          this.cbLevel = 3;
+          this.cbActiveSince = timestamp;
+          this.cbReason = `L3 Flash Crash: ${(movePct * 100).toFixed(1)}% move in ${this.config.cb3WindowSeconds}s`;
+          this.cbHaltUntil = null; // Manual reset required
+        }
+      }
+    }
+
+    // L2: 10% drawdown in 24h
+    if (this.cbLevel < 3 && this.equitySnapshots.length >= 2) {
+      const peak24h = Math.max(...this.equitySnapshots.map(s => s.equity));
+      const current = this.equitySnapshots[this.equitySnapshots.length - 1]?.equity ?? peak24h;
+      const dd24h = peak24h > 0 ? (peak24h - current) / peak24h : 0;
+      if (dd24h >= this.config.cb2DrawdownPct) {
+        this.cbLevel = 2;
+        this.cbActiveSince = timestamp;
+        this.cbReason = `L2: ${(dd24h * 100).toFixed(1)}% drawdown in 24h`;
+        this.cbHaltUntil = null; // Manual review required
+      }
+    }
+
+    // L1: 5% drawdown in 60min
+    if (this.cbLevel < 2 && this.equitySnapshots.length >= 2) {
+      const cutoff60m = timestamp - 60 * 60_000;
+      const recent60m = this.equitySnapshots.filter(s => s.timestamp >= cutoff60m);
+      if (recent60m.length >= 2) {
+        const peak60m = Math.max(...recent60m.map(s => s.equity));
+        const current = recent60m[recent60m.length - 1]?.equity ?? peak60m;
+        const dd60m = peak60m > 0 ? (peak60m - current) / peak60m : 0;
+        if (dd60m >= this.config.cb1DrawdownPct) {
+          this.cbLevel = 1;
+          this.cbActiveSince = timestamp;
+          this.cbReason = `L1: ${(dd60m * 100).toFixed(1)}% drawdown in 60min`;
+          this.cbHaltUntil = timestamp + this.config.cb1HaltMinutes * 60_000;
+        }
+      }
+    }
+
+    return this.getCircuitBreakerState();
+  }
+
+  getCircuitBreakerState(): CircuitBreakerState {
+    return {
+      level: this.cbLevel,
+      activeSince: this.cbActiveSince,
+      reason: this.cbReason,
+      stopMultiplier: this.cbLevel === 3 ? 0.25 : this.cbLevel === 1 ? 0.5 : 1.0,
+      positionSizeMultiplier: this.cbLevel === 2 ? 0.5 : 1.0,
+      entriesHalted: this.cbLevel >= 1,
+    };
+  }
+
+  resetCircuitBreaker(): void {
+    this.cbLevel = 0;
+    this.cbActiveSince = null;
+    this.cbReason = null;
+    this.cbHaltUntil = null;
+  }
+
   getStatus(): RiskStatus {
     const now = Date.now();
     const killSwitchActive = this.killSwitchUntil !== null && now < this.killSwitchUntil;
     return {
       killSwitchActive,
       killSwitchUntil: this.killSwitchUntil,
-      warnings: []
+      warnings: [],
+      circuitBreaker: this.getCircuitBreakerState(),
     };
   }
 

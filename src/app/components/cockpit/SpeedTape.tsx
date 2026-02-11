@@ -16,7 +16,7 @@ interface SpeedTapeProps {
 
 const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, priceRoC, radarVector, dynamicRegime, onScaleUp, onScaleDown }) => {
   const [hiDec, setHiDec] = useState(false);
-  const fmt = (p: number) => hiDec && p < 1.0 ? p.toFixed(4) : p.toFixed(2);
+  const fmt = (p: number) => hiDec ? p.toFixed(4) : p.toFixed(2);
   const rv = radarVector;
   const rvEstablished = rv?.status === 'ESTABLISH';
   const mid = smoothedTech.midPrice;
@@ -145,10 +145,15 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
 
   // Current price marker (centered on tape, rendered last for z-priority)
   const midY = priceToY(mid);
+  const pxL = hiDec ? 56 : 62;   // wider diamond for 4-digit mode
+  const pxLi = hiDec ? 66 : 72;
+  const pxRi = hiDec ? 134 : 128;
+  const pxR = hiDec ? 144 : 138;
+  const pxFs = hiDec ? 11 : 13;
   elements.push(
     <g key="price-marker" style={{ transition: 'transform 0.8s ease-out' }}>
-      <polygon points={`${62},${midY} ${72},${midY - 11} ${128},${midY - 11} ${138},${midY} ${128},${midY + 11} ${72},${midY + 11}`} fill="rgba(0,0,0,0.95)" stroke={ECAM.GREEN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }} />
-      <text x="100" y={midY + 5} textAnchor="middle" fill={ECAM.GREEN} fontSize="13" fontWeight="bold" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>
+      <polygon points={`${pxL},${midY} ${pxLi},${midY - 11} ${pxRi},${midY - 11} ${pxR},${midY} ${pxRi},${midY + 11} ${pxLi},${midY + 11}`} fill="rgba(0,0,0,0.95)" stroke={ECAM.GREEN} strokeWidth="2" style={{ transition: 'all 0.8s ease-out' }} />
+      <text x="100" y={midY + 5} textAnchor="middle" fill={ECAM.GREEN} fontSize={pxFs} fontWeight="bold" fontFamily="monospace" style={{ transition: 'y 0.8s ease-out' }}>
         {fmt(mid)}
       </text>
     </g>
@@ -196,10 +201,17 @@ const SpeedTape: React.FC<SpeedTapeProps> = ({ smoothedTech, wallRangePct, price
         <rect x="0" y="0" width="200" height="380" fill="rgba(5,5,10,0.9)" rx="4" />
         {elements}
         {/* D toggle — bottom left */}
-        <g onClick={() => setHiDec(d => !d)} style={{ cursor: 'pointer' }}>
-          <rect x="4" y="356" width="20" height="18" rx="3" fill={hiDec ? 'rgba(0,221,255,0.15)' : 'rgba(255,255,255,0.04)'} stroke={hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.2)'} strokeWidth="1.2" />
-          <text x="14" y="369" textAnchor="middle" fill={hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.4)'} fontSize="10" fontFamily="monospace" fontWeight="bold">D</text>
-        </g>
+        <foreignObject x="4" y="356" width="20" height="18">
+          <button
+            onClick={() => setHiDec(d => !d)}
+            style={{
+              width: 20, height: 18, padding: 0, margin: 0, border: `1.2px solid ${hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.2)'}`,
+              borderRadius: 3, background: hiDec ? 'rgba(0,221,255,0.15)' : 'rgba(255,255,255,0.04)',
+              color: hiDec ? ECAM.CYAN : 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold',
+              cursor: 'pointer', lineHeight: '16px',
+            }}
+          >D</button>
+        </foreignObject>
       </svg>
     </Box>
   );

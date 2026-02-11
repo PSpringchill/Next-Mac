@@ -45,6 +45,9 @@ export interface SignalFilterState {
   // Ensemble signal generator state
   ensemble?: EnsembleResult;
   exitSignal?: ExitSignal;
+  // Friction Layer
+  effectiveEdge?: number;
+  edgeBlocked?: boolean;
 }
 
 export interface PaperTradeResult {
@@ -511,15 +514,30 @@ class PaperTradingEngine extends EventEmitter {
       if (rvEntry.dominantSide === 'SELL' && ensDir > 0) radarBlocked = true;
     }
 
+    // ─── Friction Layer: Effective Edge pre-execution filter ──────────────
+    // Effective_Edge = Confidence - (Spread% + Slippage_est + Fees)
+    // Execute only if Effective_Edge > 0.15
+    const midPrice = (parseFloat(marketData.orderBook.asks[0]?.[0] ?? '0')
+      + parseFloat(marketData.orderBook.bids[0]?.[0] ?? '0')) / 2;
+    const spreadPct = midPrice > 0 ? spread / midPrice : 0;
+    const microstructure = this.featureExtractor.extractMicrostructure(marketData.orderBook);
+    const slippageEst = spreadPct / 2 + Math.abs(microstructure.priceImpact) * 0.01;
+    const fees = 0.001; // 0.1% round-trip (maker+taker)
+    const effectiveEdge = filteredConfidence - (spreadPct + slippageEst + fees);
+    const edgeBlocked = effectiveEdge < 0.15;
+
+    if (this.lastSignalFilter) {
+      this.lastSignalFilter.effectiveEdge = effectiveEdge;
+      this.lastSignalFilter.edgeBlocked = edgeBlocked;
+    }
+
     const ensembleShouldEnter = this.lastEnsemble.shouldEnter && this.lastEnsemble.direction !== 0;
-    const noBlockers = !alphaBlocked && !gradientBlocked && !hmmBlocked && !radarBlocked;
+    const noBlockers = !alphaBlocked && !gradientBlocked && !hmmBlocked && !radarBlocked && !edgeBlocked;
 
     if (noBlockers && ensembleShouldEnter && this.position === 0) {
       const direction = this.lastEnsemble.direction as 1 | -1;
-      // Position size: riskPerTrade * account / price, scaled by Pareto + ensemble confidence
       const paretoMultiplier = this.lastParetoState
         ? this.lastParetoState.positionSizeMultiplier : 1.0;
-      const riskPerTrade = 0.02; // 2% of account
       // Boost confidence when RadarVector ESTABLISH aligns with entry direction
       const rvBoost = rvEstablishedEntry && rvEntry
         && (rvEntry.dominantSide === 'NEUTRAL'
@@ -527,7 +545,24 @@ class PaperTradingEngine extends EventEmitter {
           || (rvEntry.dominantSide === 'SELL' && direction < 0))
         ? 1.15 : 1.0;
       const boostedConfidence = Math.min(1.0, ensembleConfidence * rvBoost);
-      const baseSize = Math.abs((this.portfolio * riskPerTrade * boostedConfidence) / marketData.price);
+
+      // ─── Pareto-Kelly unified position sizing (MFC Phase 3) ──────────
+      // Kelly_Fraction = (WinRate × (1 + AvgWin/AvgLoss) - 1) / (AvgWin/AvgLoss)
+      // Position = min(0.25, Kelly) × AvailableCapital × Confidence × ParetoMultiplier
+      const recentTrades = this.trades.slice(-50);
+      const wins = recentTrades.filter(t => (t.pnl ?? 0) > 0);
+      const losses = recentTrades.filter(t => (t.pnl ?? 0) < 0);
+      let kellyFraction = 0.02; // Fallback: 2% fixed risk if insufficient history
+      if (wins.length >= 5 && losses.length >= 2) {
+        const winRate = wins.length / recentTrades.length;
+        const avgWin = wins.reduce((s, t) => s + (t.pnl ?? 0), 0) / wins.length;
+        const avgLoss = Math.abs(losses.reduce((s, t) => s + (t.pnl ?? 0), 0) / losses.length);
+        const b = avgLoss > 0 ? avgWin / avgLoss : 0;
+        const rawKelly = b > 0 ? Math.max(0, (winRate * (1 + b) - 1) / b) : 0;
+        kellyFraction = Math.min(0.25, rawKelly); // Quarter-Kelly safety cap
+      }
+      const availableCapital = this.portfolio * 0.5; // 50% cash reserve
+      const baseSize = Math.abs((availableCapital * kellyFraction * boostedConfidence) / marketData.price);
       const size = baseSize * paretoMultiplier;
 
       const executionResult = this.executionEngine.executeOrder(
