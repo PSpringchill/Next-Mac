@@ -7,7 +7,7 @@ import {
 } from '@tradingEngine/types';
 import TradingEngine from './MLTradingCore';
 import ExecutionEngine from './ExecutionEngine';
-import RiskManager from './RiskManager';
+import RiskManager, { type CircuitBreakerState } from './RiskManager';
 import RewardCalculator, { ExecutionReport } from './RewardCalculator';
 import MarketCharacteristor, { type ATISReport } from './MarketCharacteristor';
 import CandleAggregator from './CandleAggregator';
@@ -155,7 +155,7 @@ class PaperTradingEngine extends EventEmitter {
   }
 
   // ─── Feed analyzers only (no trade execution) for always-on monitoring ─────
-  async feedMonitoringData(marketData: MarketData): Promise<{ pareto?: ParetoState; regime?: RegimeResult; signalFilter?: SignalFilterState; radarVector?: RadarVectorState }> {
+  async feedMonitoringData(marketData: MarketData): Promise<{ pareto?: ParetoState; regime?: RegimeResult; signalFilter?: SignalFilterState; radarVector?: RadarVectorState; circuitBreaker?: CircuitBreakerState }> {
     // Aggregate into 15m candles
     this.candleAggregator.processTick({
       price: marketData.price,
@@ -165,6 +165,11 @@ class PaperTradingEngine extends EventEmitter {
 
     // Feed Pareto analyzer (log returns from every tick)
     this.paretoAnalyzer.addPrice(marketData.price);
+
+    // Feed RiskManager for circuit breaker detection
+    const equity = this.portfolio + this.position * marketData.price;
+    this.riskManager.feedPrice(marketData.price, marketData.timestamp);
+    this.riskManager.feedEquity(equity, marketData.timestamp);
 
     // Feed dynamic thresholds
     const atrState = this.candleAggregator.getATR();
@@ -263,11 +268,15 @@ class PaperTradingEngine extends EventEmitter {
     const allTechMet = this.lastEnsemble?.allConditionsMet ?? false;
     this.lastRadarVector = this.radarVector.feed(marketData, allTechMet);
 
+    // Evaluate circuit breakers
+    const cbState = this.riskManager.evaluateCircuitBreakers(marketData.timestamp);
+
     return {
       pareto: this.lastParetoState ?? undefined,
       regime: this.lastRegime ?? undefined,
       signalFilter: this.lastSignalFilter,
       radarVector: this.lastRadarVector ?? undefined,
+      circuitBreaker: cbState,
     };
   }
 

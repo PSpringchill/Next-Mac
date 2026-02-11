@@ -3,12 +3,17 @@ import { Box, Typography } from '@mui/material';
 import { ECAM, VolumeBin } from './ecamTheme';
 import type { RadarVectorState } from '../TradingEngine/RadarVector';
 import type { RegimeResult } from '../TradingEngine/DynamicThresholds';
+import type { LinRegState } from '../TradingEngine/LinearRegressionTarget';
+import type { CircuitBreakerState } from '../TradingEngine/RiskManager';
 
 interface AttitudeIndicatorProps {
   volumeProfile: { bins: VolumeBin[]; totalBidVol: number; totalAskVol: number };
   volRoC: number;
   radarVector?: RadarVectorState | null;
   dynamicRegime?: RegimeResult | null;
+  linReg?: LinRegState | null;
+  currentPrice?: number;
+  circuitBreaker?: CircuitBreakerState | null;
 }
 
 const REGIME_COLOR: Record<string, string> = {
@@ -18,7 +23,7 @@ const REGIME_COLOR: Record<string, string> = {
   CALM: '#00ddff',
 };
 
-const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC, radarVector, dynamicRegime }) => {
+const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, volRoC, radarVector, dynamicRegime, linReg, currentPrice, circuitBreaker }) => {
   const rv = radarVector;
   const rvEstablished = rv?.status === 'ESTABLISH';
   const rvStatusColor = rvEstablished ? ECAM.GREEN
@@ -33,8 +38,26 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
       <Typography sx={{ color: ECAM.WHITE, fontSize: '0.7rem', letterSpacing: '0.12em', mb: 0.5, fontWeight: 700 }}>
         ATT — VOLUME PROFILE
       </Typography>
-      <svg width="100%" height="100%" viewBox="0 0 420 405" style={{ maxWidth: 420 }}>
-        <rect x="0" y="0" width="420" height="405" fill="rgba(5,5,10,0.9)" rx="4" />
+      <svg width="100%" height="100%" viewBox="0 0 415 420" style={{ maxWidth: 415 }}>
+        <rect x="0" y="0" width="415" height="420" fill="rgba(5,5,10,0.9)" rx="4" />
+
+        {/* Circuit Breaker — top right */}
+        {(() => {
+          const cb = circuitBreaker;
+          const cbLvl = cb?.level ?? 0;
+          const cbCol = cbLvl === 0 ? ECAM.GREEN : cbLvl === 1 ? ECAM.AMBER : ECAM.RED;
+          const cbLabel = cbLvl === 0 ? 'CB NORM' : `CB L${cbLvl}`;
+          return (
+            <g>
+              <rect x="341" y="4" width="72" height="20" rx="3"
+                fill={cbLvl >= 2 ? 'rgba(255,0,0,0.12)' : cbLvl === 1 ? 'rgba(255,170,0,0.08)' : 'rgba(0,0,0,0.5)'}
+                stroke={cbCol} strokeWidth={cbLvl >= 2 ? 1.5 : 1} />
+              <text x="377" y="17" textAnchor="middle" fill={cbCol} fontSize="10" fontFamily="monospace" fontWeight="bold">
+                {cbLabel}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Dynamic Regime badge — top center */}
         {dynamicRegime && (
@@ -184,15 +207,102 @@ const AttitudeIndicator: React.FC<AttitudeIndicatorProps> = ({ volumeProfile, vo
         {/* Transition status — bottom left */}
         {dynamicRegime && dynamicRegime.transitionPriceUp > 0 && (
           <g>
-            <rect x="4" y="340" width="148" height="34" rx="3" fill="rgba(0,0,0,0.7)" stroke={dynamicRegime.reversalRisk ? ECAM.AMBER : 'rgba(255,255,255,0.15)'} strokeWidth="1" />
-            <text x="10" y="354" fill={dynamicRegime.reversalRisk ? ECAM.AMBER : ECAM.DIM} fontSize="8" fontFamily="monospace" fontWeight="bold">TRANSITION</text>
-            <text x="10" y="368" fill={ECAM.GREEN} fontSize="9" fontFamily="monospace">▲{dynamicRegime.transitionPriceUp.toFixed(4)}</text>
-            <text x="82" y="368" fill={ECAM.RED} fontSize="9" fontFamily="monospace">▼{dynamicRegime.transitionPriceDown.toFixed(4)}</text>
+            <rect x="4" y="340" width="160" height="36" rx="3" fill="rgba(0,0,0,0.7)" stroke={dynamicRegime.reversalRisk ? ECAM.AMBER : 'rgba(255,255,255,0.15)'} strokeWidth="1" />
+            <text x="10" y="356" fill={dynamicRegime.reversalRisk ? ECAM.AMBER : ECAM.DIM} fontSize="10" fontFamily="monospace" fontWeight="bold">TRANSITION</text>
+            <text x="10" y="372" fill={ECAM.GREEN} fontSize="11" fontFamily="monospace" fontWeight="bold">▲{dynamicRegime.transitionPriceUp.toFixed(4)}</text>
+            <text x="88" y="372" fill={ECAM.RED} fontSize="11" fontFamily="monospace" fontWeight="bold">▼{dynamicRegime.transitionPriceDown.toFixed(4)}</text>
           </g>
         )}
 
+        {/* ═══ ILS OVERLAY — Precision Approach ═══ */}
+        {/* Localizer (horizontal) inside bottom of circle, GS (vertical) inside right of circle */}
+        {(() => {
+          const lr = linReg;
+          const hasILS = lr && lr.rSquared > 0;
+          const dotSp = 16;
+          const dotR = 2.5;
+          const dSz = 5;
+
+          // Localizer: inside bottom of circle (y = acy + ar - 20)
+          const locY = acy + ar - 20;
+          const locDev = hasILS && lr.stdError > 0 && currentPrice
+            ? Math.max(-2, Math.min(2, (currentPrice - lr.priceTarget) / (lr.stdError * 2)))
+            : 0;
+
+          // Glide slope: inside right of circle (x = acx + ar - 20)
+          const gsX = acx + ar - 20;
+          const gsDev = hasILS
+            ? Math.max(-2, Math.min(2, (lr.acceleration / (Math.abs(lr.slope) + 1e-8)) * 50))
+            : 0;
+
+          const rSq = lr?.rSquared ?? 0;
+          const beamCol = rSq > 0.85 ? ECAM.GREEN : rSq > 0.5 ? ECAM.CYAN : rSq > 0.2 ? ECAM.AMBER : ECAM.RED;
+          const stable = lr?.glideSlopeStable ?? true;
+          const dhLabel = rSq > 0.85 ? 'III' : rSq > 0.7 ? 'II' : rSq > 0.5 ? 'I' : '—';
+          const dhCol = rSq > 0.85 ? ECAM.GREEN : rSq > 0.7 ? ECAM.CYAN : rSq > 0.5 ? ECAM.AMBER : ECAM.RED;
+          const sDir = (lr?.slope ?? 0) > 0 ? 'LONG' : (lr?.slope ?? 0) < 0 ? 'SHORT' : 'HOLD';
+          const sDirCol = sDir === 'LONG' ? ECAM.GREEN : sDir === 'SHORT' ? ECAM.RED : ECAM.DIM;
+
+          return (
+            <g opacity={hasILS ? 1 : 0.3}>
+              {/* ─── LOCALIZER (horizontal, inside bottom of circle) ─── */}
+              <line x1={acx - 2 * dotSp - 4} y1={locY} x2={acx + 2 * dotSp + 4} y2={locY}
+                stroke={ECAM.MAGENTA} strokeWidth="1.5" opacity="0.5" />
+              {[-2, -1, 0, 1, 2].map(d => (
+                <circle key={`loc-${d}`} cx={acx + d * dotSp} cy={locY} r={dotR}
+                  fill="none" stroke={d === 0 ? ECAM.WHITE : 'rgba(255,255,255,0.3)'} strokeWidth={d === 0 ? 1.2 : 0.8} />
+              ))}
+              <polygon
+                points={`${acx + locDev * dotSp},${locY - dSz} ${acx + locDev * dotSp + dSz},${locY} ${acx + locDev * dotSp},${locY + dSz} ${acx + locDev * dotSp - dSz},${locY}`}
+                fill={ECAM.MAGENTA} opacity="0.9"
+                style={{ transition: 'all 0.5s ease-out' }} />
+
+              {/* ─── GLIDE SLOPE (vertical, inside right of circle) ─── */}
+              <line x1={gsX} y1={acy - 2 * dotSp - 4} x2={gsX} y2={acy + 2 * dotSp + 4}
+                stroke={ECAM.MAGENTA} strokeWidth="1.5" opacity="0.5" />
+              {[-2, -1, 0, 1, 2].map(d => (
+                <circle key={`gs-${d}`} cx={gsX} cy={acy + d * dotSp} r={dotR}
+                  fill="none" stroke={d === 0 ? ECAM.WHITE : 'rgba(255,255,255,0.3)'} strokeWidth={d === 0 ? 1.2 : 0.8} />
+              ))}
+              <polygon
+                points={`${gsX},${acy - gsDev * dotSp - dSz} ${gsX + dSz},${acy - gsDev * dotSp} ${gsX},${acy - gsDev * dotSp + dSz} ${gsX - dSz},${acy - gsDev * dotSp}`}
+                fill={ECAM.MAGENTA} opacity="0.9"
+                style={{ transition: 'all 0.5s ease-out' }} />
+
+              {/* ─── BOTTOM-LEFT: LONG/SHORT + STABLE/UNSTABLE (above TRANSITION) ─── */}
+              <rect x="4" y="322" width="52" height="18" rx="3" fill="rgba(0,0,0,0.7)" stroke={sDirCol} strokeWidth="1.2" />
+              <text x="30" y="335" textAnchor="middle" fill={sDirCol} fontSize="11" fontFamily="monospace" fontWeight="bold">{sDir}</text>
+
+              <rect x="60" y="322" width="44" height="18" rx="3"
+                fill={stable ? 'rgba(0,255,136,0.06)' : 'rgba(255,170,0,0.12)'}
+                stroke={stable ? ECAM.GREEN : ECAM.AMBER} strokeWidth="1" />
+              <text x="82" y="335" textAnchor="middle" fill={stable ? ECAM.GREEN : ECAM.AMBER} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                {stable ? 'G/S✓' : 'G/S!'}
+              </text>
+
+              {/* ─── BOTTOM-RIGHT: CAT badge (below VOL RoC gauge) ─── */}
+              <rect x="350" y="340" width="44" height="16" rx="3" fill="rgba(0,0,0,0.7)" stroke={dhCol} strokeWidth="1" />
+              <text x="372" y="352" textAnchor="middle" fill={dhCol} fontSize="10" fontFamily="monospace" fontWeight="bold">C{dhLabel}</text>
+
+              {/* ─── ILS READOUTS (bottom-left, below TRANSITION) ─── */}
+              <text x="6" y="392" fill={ECAM.DIM} fontSize="9" fontFamily="monospace">SLOPE</text>
+              <text x="50" y="392" fill={lr?.slope && lr.slope > 0 ? ECAM.GREEN : lr?.slope && lr.slope < 0 ? ECAM.RED : ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                {lr?.slope ? (lr.slope > 0 ? '+' : '') + lr.slope.toFixed(3) : '—'}
+              </text>
+              <text x="6" y="406" fill={ECAM.DIM} fontSize="9" fontFamily="monospace">ACCEL</text>
+              <text x="50" y="406" fill={lr?.acceleration && lr.acceleration > 0 ? ECAM.GREEN : lr?.acceleration && lr.acceleration < 0 ? ECAM.RED : ECAM.DIM} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                {lr?.acceleration ? (lr.acceleration > 0 ? '+' : '') + lr.acceleration.toFixed(4) : '—'}
+              </text>
+              <text x="120" y="392" fill={ECAM.DIM} fontSize="9" fontFamily="monospace">R²</text>
+              <text x="138" y="392" fill={beamCol} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                {rSq.toFixed(3)}
+              </text>
+            </g>
+          );
+        })()}
+
         {/* Volume summary */}
-        <text x="180" y="390" textAnchor="middle" fill={ECAM.DIM} fontSize="10" fontFamily="monospace">
+        <text x="240" y="415" textAnchor="middle" fill={ECAM.DIM} fontSize="10" fontFamily="monospace">
           BID {volumeProfile.totalBidVol.toFixed(1)} | ASK {volumeProfile.totalAskVol.toFixed(1)}
         </text>
       </svg>

@@ -14,6 +14,7 @@ import type { ParetoState } from '../app/components/TradingEngine/ParetoAnalyzer
 import type { RegimeResult } from '../app/components/TradingEngine/DynamicThresholds';
 import type { SignalFilterState } from '../app/components/TradingEngine/PaperTradingEngine';
 import type { RadarVectorState } from '../app/components/TradingEngine/RadarVector';
+import type { CircuitBreakerState } from '../app/components/TradingEngine/RiskManager';
 
 interface TradingState {
   // Current market data
@@ -71,6 +72,10 @@ interface TradingState {
 
   // Radar Vector: Background Grid Search
   radarVector: RadarVectorState | null;
+
+  // Circuit Breaker (3-level graduated)
+  circuitBreaker: CircuitBreakerState | null;
+
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -90,6 +95,7 @@ interface TradingState {
   updateDynamicRegime: (regime: RegimeResult) => void;
   updateSignalFilter: (filter: SignalFilterState) => void;
   updateRadarVector: (rv: RadarVectorState) => void;
+  updateCircuitBreaker: (cb: CircuitBreakerState) => void;
   reset: () => void;
 }
 
@@ -116,7 +122,8 @@ const initialState = {
   dynamicRegime: null,
   paretoHistory: [],
   signalFilter: null,
-  radarVector: null
+  radarVector: null,
+  circuitBreaker: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -205,6 +212,10 @@ export const useTradingStore = create<TradingState>()(
 
     updateRadarVector: (rv) => set((state) => {
       state.radarVector = JSON.parse(JSON.stringify(rv));
+    }),
+
+    updateCircuitBreaker: (cb) => set((state) => {
+      state.circuitBreaker = JSON.parse(JSON.stringify(cb));
     }),
     
     reset: () => set(() => initialState)

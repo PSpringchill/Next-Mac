@@ -42,11 +42,26 @@ const regimeColor = (regime: string | undefined): string => {
 };
 
 // ─── COMPONENT ───
+const cbLevelColor = (level: number): string => {
+  if (level >= 3) return ECAM.RED;
+  if (level >= 2) return ECAM.RED;
+  if (level >= 1) return ECAM.AMBER;
+  return ECAM.GREEN;
+};
+
+const cbLevelLabel = (level: number): string => {
+  if (level >= 3) return 'L3 FLASH CRASH';
+  if (level >= 2) return 'L2 DRAWDOWN';
+  if (level >= 1) return 'L1 DRAWDOWN';
+  return 'NORMAL';
+};
+
 const ParetoMonitor: React.FC = () => {
   const paretoState = useTradingStore((s) => s.paretoState);
   const dynamicRegime = useTradingStore((s) => s.dynamicRegime);
   const paretoHistory = useTradingStore((s) => s.paretoHistory);
   const signalFilter = useTradingStore((s) => s.signalFilter);
+  const circuitBreaker = useTradingStore((s) => s.circuitBreaker);
 
   // ─── Alpha sparkline path ───
   const sparklinePath = useMemo(() => {
@@ -511,6 +526,93 @@ const ParetoMonitor: React.FC = () => {
             </Box>
           </Box>
 
+          {/* ─── Effective Edge (Friction Layer) ─── */}
+          <Box sx={{ mb: 1, mt: 0.5 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>EFFECTIVE EDGE</Typography>
+              <Typography sx={{
+                color: signalFilter.edgeBlocked ? ECAM.RED
+                  : (signalFilter.effectiveEdge ?? 0) >= 0.3 ? ECAM.GREEN
+                  : (signalFilter.effectiveEdge ?? 0) >= 0.15 ? ECAM.CYAN : ECAM.AMBER,
+                fontSize: '0.7rem', fontWeight: 600,
+              }}>
+                {((signalFilter.effectiveEdge ?? 0) * 100).toFixed(1)}%
+                {signalFilter.edgeBlocked ? ' BLOCKED' : ''}
+              </Typography>
+            </Box>
+            <Box sx={{
+              height: 8, width: '100%',
+              bgcolor: 'rgba(255,255,255,0.06)',
+              borderRadius: 1, overflow: 'hidden',
+              position: 'relative',
+            }}>
+              {/* 0.15 threshold marker */}
+              <Box sx={{ position: 'absolute', left: '15%', top: -1, bottom: -1, width: 1.5, bgcolor: ECAM.CYAN, opacity: 0.5, zIndex: 1 }} />
+              <Box sx={{
+                height: '100%',
+                width: `${Math.min(100, Math.max(0, (signalFilter.effectiveEdge ?? 0) * 100))}%`,
+                bgcolor: signalFilter.edgeBlocked ? ECAM.RED
+                  : (signalFilter.effectiveEdge ?? 0) >= 0.15 ? ECAM.GREEN : ECAM.AMBER,
+                borderRadius: 1,
+                transition: 'width 0.5s ease-out, background-color 0.3s',
+              }} />
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.2 }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.45rem' }}>0%</Typography>
+              <Typography sx={{ color: ECAM.CYAN, fontSize: '0.45rem' }}>MIN 15%</Typography>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.45rem' }}>100%</Typography>
+            </Box>
+          </Box>
+
+          {/* ─── ILS Acceleration Guard ─── */}
+          {signalFilter.linReg && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.6rem' }}>ILS GLIDE</Typography>
+              <Box sx={{
+                px: 0.8, py: 0.3, borderRadius: 0.5,
+                bgcolor: signalFilter.linReg.glideSlopeStable
+                  ? 'rgba(0,255,136,0.08)' : 'rgba(255,170,0,0.15)',
+                border: `1px solid ${signalFilter.linReg.glideSlopeStable ? ECAM.GREEN : ECAM.AMBER}`,
+              }}>
+                <Typography sx={{
+                  color: signalFilter.linReg.glideSlopeStable ? ECAM.GREEN : ECAM.AMBER,
+                  fontSize: '0.65rem', fontWeight: 700,
+                }}>
+                  {signalFilter.linReg.glideSlopeStable ? 'STABLE' : 'UNSTABLE'}
+                </Typography>
+              </Box>
+              <Box sx={{ flex: 1, display: 'flex', gap: 1.5 }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem' }}>SLOPE</Typography>
+                  <Typography sx={{
+                    color: signalFilter.linReg.slope > 0 ? ECAM.GREEN : signalFilter.linReg.slope < 0 ? ECAM.RED : ECAM.DIM,
+                    fontSize: '0.68rem', fontWeight: 600,
+                  }}>
+                    {signalFilter.linReg.slope > 0 ? '+' : ''}{signalFilter.linReg.slope.toFixed(4)}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem' }}>ACCEL</Typography>
+                  <Typography sx={{
+                    color: signalFilter.linReg.acceleration > 0 ? ECAM.GREEN : signalFilter.linReg.acceleration < 0 ? ECAM.RED : ECAM.DIM,
+                    fontSize: '0.68rem', fontWeight: 600,
+                  }}>
+                    {signalFilter.linReg.acceleration > 0 ? '+' : ''}{signalFilter.linReg.acceleration.toFixed(5)}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem' }}>R²</Typography>
+                  <Typography sx={{
+                    color: signalFilter.linReg.rSquared > 0.85 ? ECAM.GREEN : signalFilter.linReg.rSquared > 0.5 ? ECAM.CYAN : ECAM.AMBER,
+                    fontSize: '0.68rem', fontWeight: 600,
+                  }}>
+                    {signalFilter.linReg.rSquared.toFixed(3)}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          )}
+
           {/* Filter reason */}
           {signalFilter.filterReason && (
             <Box sx={{
@@ -523,6 +625,64 @@ const ParetoMonitor: React.FC = () => {
                 fontSize: '0.6rem', fontStyle: 'italic',
               }}>
                 {signalFilter.filterReason}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* ═══ CIRCUIT BREAKER STATUS ═══ */}
+      {circuitBreaker && circuitBreaker.level > 0 && (
+        <Box sx={{
+          bgcolor: ECAM.PANEL, p: 1.5,
+          border: `1px solid ${cbLevelColor(circuitBreaker.level)}`,
+          animation: circuitBreaker.level >= 3 ? 'pulse 1s infinite' : 'none',
+        }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography sx={{ color: ECAM.WHITE, fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 700 }}>
+              CIRCUIT BREAKER
+            </Typography>
+            <Box sx={{
+              px: 1, py: 0.3, borderRadius: 0.5,
+              bgcolor: circuitBreaker.level >= 3 ? 'rgba(255,34,34,0.2)'
+                : circuitBreaker.level >= 2 ? 'rgba(255,34,34,0.12)'
+                : 'rgba(255,170,0,0.12)',
+              border: `1px solid ${cbLevelColor(circuitBreaker.level)}`,
+            }}>
+              <Typography sx={{
+                color: cbLevelColor(circuitBreaker.level),
+                fontSize: '0.7rem', fontWeight: 800,
+              }}>
+                {cbLevelLabel(circuitBreaker.level)}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mb: 1 }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mb: 0.2 }}>STOP ×</Typography>
+              <Typography sx={{ color: cbLevelColor(circuitBreaker.level), fontSize: '0.85rem', fontWeight: 700 }}>
+                {circuitBreaker.stopMultiplier.toFixed(2)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mb: 0.2 }}>POS SIZE ×</Typography>
+              <Typography sx={{ color: circuitBreaker.positionSizeMultiplier < 1 ? ECAM.AMBER : ECAM.GREEN, fontSize: '0.85rem', fontWeight: 700 }}>
+                {circuitBreaker.positionSizeMultiplier.toFixed(2)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: ECAM.DIM, fontSize: '0.5rem', mb: 0.2 }}>ENTRIES</Typography>
+              <Typography sx={{ color: circuitBreaker.entriesHalted ? ECAM.RED : ECAM.GREEN, fontSize: '0.85rem', fontWeight: 700 }}>
+                {circuitBreaker.entriesHalted ? 'HALTED' : 'OPEN'}
+              </Typography>
+            </Box>
+          </Box>
+
+          {circuitBreaker.reason && (
+            <Box sx={{ px: 1, py: 0.5, bgcolor: 'rgba(255,34,34,0.1)', borderRadius: 0.5 }}>
+              <Typography sx={{ color: cbLevelColor(circuitBreaker.level), fontSize: '0.6rem', fontStyle: 'italic' }}>
+                {circuitBreaker.reason}
               </Typography>
             </Box>
           )}
