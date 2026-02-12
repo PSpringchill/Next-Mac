@@ -29,7 +29,7 @@ const ACTION_DIRECTION: Record<RLAction, number> = {
   [RLAction.STRONG_BUY]: 1,
 };
 
-// ─── Experience for replay buffer ───────────────────────────────────────────
+// ─── Experience for replay buffer (with PER priority) ───────────────────────
 
 interface RLExperience {
   state: number[];
@@ -37,6 +37,8 @@ interface RLExperience {
   reward: number;
   nextState: number[];
   done: boolean;
+  tdError: number;   // TD-error for Prioritized Experience Replay
+  age: number;       // tick when added (for staleness)
 }
 
 // ─── Training state exposed to UI ──────────────────────────────────────────
@@ -61,6 +63,14 @@ export interface RLTrainerState {
   // Training history
   avgReward: number;
   cumulativePnL: number;
+  // Validation metrics (OOS)
+  validationWinRate: number;
+  validationPnL: number;
+  validationSharpe: number;
+  // Training intensity
+  trainFrequency: number;
+  rewardMean: number;
+  rewardStd: number;
 }
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -78,13 +88,25 @@ export interface RLTrainerConfig {
   lookAheadTicks: number;     // Ticks to look ahead for reward computation
   holdPenalty: number;        // Penalty per tick for holding a position
   transactionCost: number;    // Simulated transaction cost (% of price)
+  // PER (Prioritized Experience Replay)
+  perAlpha: number;           // Priority exponent (0=uniform, 1=full priority)
+  perBetaStart: number;       // IS weight annealing start
+  perBetaEnd: number;         // IS weight annealing end
+  // Adaptive training
+  trainFreqMin: number;       // Min ticks between training (aggressive early)
+  trainFreqMax: number;       // Max ticks between training (stable later)
+  matureSteps: number;        // Steps to reach mature training frequency
+  // Validation
+  validationSplit: number;    // Fraction of buffer held out for validation (0.2 = 20%)
+  // Reward normalization
+  rewardClip: number;         // Clip rewards to [-clip, clip]
 }
 
 const DEFAULT_CONFIG: RLTrainerConfig = {
   trainEveryTicks: 100,
-  minBufferSize: 500,         // ~7 minutes at 800ms throttle
+  minBufferSize: 200,         // lowered: ~2.5 min at 800ms throttle
   batchSize: 64,
-  replayCapacity: 50000,
+  replayCapacity: 100000,     // doubled for more diverse experience
   gamma: 0.95,
   epsilonStart: 1.0,
   epsilonEnd: 0.05,
@@ -93,6 +115,14 @@ const DEFAULT_CONFIG: RLTrainerConfig = {
   lookAheadTicks: 30,         // ~24 seconds ahead
   holdPenalty: 0.0001,
   transactionCost: 0.0004,    // 0.04% (typical taker fee)
+  perAlpha: 0.6,
+  perBetaStart: 0.4,
+  perBetaEnd: 1.0,
+  trainFreqMin: 20,           // train every 20 ticks when young
+  trainFreqMax: 100,          // taper to every 100 ticks when mature
+  matureSteps: 500,           // reach maturity after 500 train steps
+  validationSplit: 0.2,       // hold out 20% for OOS validation
+  rewardClip: 5.0,            // clip rewards to [-5, 5]
 };
 
 // ─── DQN Model Builder ─────────────────────────────────────────────────────
@@ -136,8 +166,9 @@ class RLBacktestTrainer {
   private trainSteps: number = 0;
   private targetUpdateFreq: number = 500; // sync target every N train steps
 
-  // Replay buffer
+  // Prioritized Replay buffer
   private replay: RLExperience[] = [];
+  private perBeta: number;
 
   // Exploration
   private epsilon: number;
@@ -149,6 +180,18 @@ class RLBacktestTrainer {
   private rewardEma: number = 0;
   private cumulativePnL: number = 0;
 
+  // Reward normalization running stats
+  private rewardRunMean: number = 0;
+  private rewardRunVar: number = 1;
+  private rewardCount: number = 0;
+
+  // Validation metrics
+  private lastValidation = { winRate: 0, pnl: 0, sharpe: 0 };
+
+  // Adaptive training frequency
+  private currentTrainFreq: number;
+  private ticksSinceLastTrain: number = 0;
+
   // Current inference
   private currentAction: RLAction = RLAction.HOLD;
   private currentConfidence: number = 0;
@@ -159,6 +202,8 @@ class RLBacktestTrainer {
   constructor(config?: Partial<RLTrainerConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.epsilon = this.config.epsilonStart;
+    this.perBeta = this.config.perBetaStart;
+    this.currentTrainFreq = this.config.trainFreqMin;
     this.pfx = `rl${Math.random().toString(36).slice(2, 6)}`;
 
     this.onlineNet = buildDQN(RL_FEATURE_DIM, ACTION_SIZE, this.config.learningRate, `${this.pfx}_on`);
@@ -172,16 +217,31 @@ class RLBacktestTrainer {
     // Always infer current action
     this.infer(snapshot.features);
 
-    // Check if we should train
+    // Adaptive training frequency: train more aggressively early, taper when mature
+    this.ticksSinceLastTrain++;
+    this.updateTrainFrequency();
+
     const tickCount = buffer.length;
     const shouldTrain = tickCount >= this.config.minBufferSize
-      && tickCount % this.config.trainEveryTicks === 0;
+      && this.ticksSinceLastTrain >= this.currentTrainFreq;
 
     if (shouldTrain) {
+      this.ticksSinceLastTrain = 0;
       this.runBacktestAndTrain(buffer);
     }
 
     return this.getState();
+  }
+
+  // ─── Adaptive training schedule ────────────────────────────────────────
+
+  private updateTrainFrequency(): void {
+    const { trainFreqMin, trainFreqMax, matureSteps } = this.config;
+    const progress = Math.min(1, this.trainSteps / matureSteps);
+    // Lerp from aggressive (min) to relaxed (max)
+    this.currentTrainFreq = Math.round(
+      trainFreqMin + (trainFreqMax - trainFreqMin) * progress,
+    );
   }
 
   // ─── Inference: get action from current state ────────────────────────
@@ -283,6 +343,9 @@ class RLBacktestTrainer {
       if (direction > 0 && emaCross > 0) reward += 0.05;
       if (direction < 0 && emaCross < 0) reward += 0.05;
 
+      // Normalize reward using running stats
+      reward = this.normalizeReward(reward);
+
       // Build experience
       const nextIdx = Math.min(idx + 1, n - 1);
       experiences.push({
@@ -291,6 +354,8 @@ class RLBacktestTrainer {
         reward,
         nextState: buffer[nextIdx].features,
         done: idx + lookAheadTicks >= n - 1,
+        tdError: Math.abs(reward) + 1e-6, // initial priority = |reward| (updated after training)
+        age: this.trainSteps,
       });
     }
 
@@ -316,22 +381,82 @@ class RLBacktestTrainer {
       }
     }
 
-    // ── Phase 3: Train DQN from replay buffer ───────────────────────
+    // ── Phase 3: Train DQN from replay buffer (PER) ─────────────────
     if (this.replay.length >= this.config.batchSize) {
       this.trainStep();
     }
+
+    // ── Phase 4: Validation on held-out data ─────────────────────────
+    if (this.trainSteps > 0 && this.trainSteps % 5 === 0) {
+      this.runValidation(buffer);
+    }
   }
 
-  // ─── DQN Training Step ───────────────────────────────────────────────
+  // ─── Reward Normalization ──────────────────────────────────────────────
+
+  private normalizeReward(reward: number): number {
+    // Welford's online algorithm for running mean/var
+    this.rewardCount++;
+    const delta = reward - this.rewardRunMean;
+    this.rewardRunMean += delta / this.rewardCount;
+    const delta2 = reward - this.rewardRunMean;
+    this.rewardRunVar += (delta * delta2 - this.rewardRunVar) / Math.max(this.rewardCount, 2);
+
+    const std = Math.sqrt(Math.max(this.rewardRunVar, 1e-8));
+    const normalized = (reward - this.rewardRunMean) / std;
+
+    // Clip to prevent extreme values
+    return Math.max(-this.config.rewardClip, Math.min(this.config.rewardClip, normalized));
+  }
+
+  // ─── PER: Prioritized sampling ─────────────────────────────────────────
+
+  private samplePER(batchSize: number): { batch: RLExperience[]; indices: number[]; isWeights: number[] } {
+    const { perAlpha } = this.config;
+    const n = this.replay.length;
+
+    // Compute priorities
+    const priorities = this.replay.map(e => Math.pow(Math.abs(e.tdError) + 1e-6, perAlpha));
+    const totalPriority = priorities.reduce((s, p) => s + p, 0);
+
+    const batch: RLExperience[] = [];
+    const indices: number[] = [];
+    const isWeights: number[] = [];
+
+    for (let i = 0; i < batchSize; i++) {
+      // Weighted random sampling
+      let r = Math.random() * totalPriority;
+      let idx = 0;
+      let cumSum = priorities[0];
+      while (cumSum < r && idx < n - 1) {
+        idx++;
+        cumSum += priorities[idx];
+      }
+
+      batch.push(this.replay[idx]);
+      indices.push(idx);
+
+      // Importance Sampling weight: (1/N * 1/P(i))^beta
+      const prob = priorities[idx] / totalPriority;
+      isWeights.push(Math.pow(n * prob, -this.perBeta));
+    }
+
+    // Normalize IS weights
+    const maxWeight = Math.max(...isWeights);
+    for (let i = 0; i < isWeights.length; i++) {
+      isWeights[i] /= maxWeight;
+    }
+
+    return { batch, indices, isWeights };
+  }
+
+  // ─── DQN Training Step (with PER) ─────────────────────────────────────
 
   private trainStep(): void {
     const { batchSize, gamma } = this.config;
 
-    // Sample random batch from replay
-    const batch: RLExperience[] = [];
-    for (let i = 0; i < batchSize; i++) {
-      batch.push(this.replay[Math.floor(Math.random() * this.replay.length)]);
-    }
+    // Prioritized sampling
+    const { batch, indices, isWeights } = this.samplePER(batchSize);
 
     // Build tensors
     const states = batch.map(e => e.state);
@@ -354,7 +479,7 @@ class RLBacktestTrainer {
     const currentQData = currentQ.arraySync() as number[][];
     currentQ.dispose();
 
-    // Build targets
+    // Build targets + update PER priorities
     const targets: number[][] = [];
     let totalReward = 0;
     for (let i = 0; i < batchSize; i++) {
@@ -364,7 +489,15 @@ class RLBacktestTrainer {
       // Double DQN target
       const bestNextAction = nextQOnlineData[i].indexOf(Math.max(...nextQOnlineData[i]));
       const nextValue = exp.done ? 0 : gamma * nextQTargetData[i][bestNextAction];
-      target[exp.action] = exp.reward + nextValue;
+      const tdTarget = exp.reward + nextValue;
+
+      // TD-error for PER priority update
+      const tdError = Math.abs(tdTarget - currentQData[i][exp.action]);
+      this.replay[indices[i]].tdError = tdError;
+
+      // Apply IS weight to target (bias correction)
+      target[exp.action] = currentQData[i][exp.action] +
+        isWeights[i] * (tdTarget - currentQData[i][exp.action]);
 
       targets.push(target);
       totalReward += exp.reward;
@@ -399,10 +532,65 @@ class RLBacktestTrainer {
       this.epsilon * this.config.epsilonDecay,
     );
 
+    // Anneal PER beta toward 1.0
+    const betaProgress = Math.min(1, this.trainSteps / this.config.matureSteps);
+    this.perBeta = this.config.perBetaStart +
+      (this.config.perBetaEnd - this.config.perBetaStart) * betaProgress;
+
     // Sync target net periodically
     if (this.trainSteps % this.targetUpdateFreq === 0) {
       this.syncTargetNet();
     }
+  }
+
+  // ─── Validation: evaluate on held-out data ─────────────────────────────
+
+  private runValidation(buffer: readonly RLSnapshot[]): void {
+    const { lookAheadTicks, transactionCost, validationSplit } = this.config;
+    const n = buffer.length;
+    const valStart = Math.floor(n * (1 - validationSplit));
+    const valEnd = n - lookAheadTicks - 1;
+    if (valEnd <= valStart) return;
+
+    let wins = 0, trades = 0, totalPnl = 0;
+    const returns: number[] = [];
+    const sampleCount = Math.min(200, valEnd - valStart);
+
+    for (let s = 0; s < sampleCount; s++) {
+      const idx = valStart + Math.floor(Math.random() * (valEnd - valStart));
+      const snap = buffer[idx];
+      const futureSnap = buffer[Math.min(idx + lookAheadTicks, n - 1)];
+
+      // Greedy inference (no exploration) for validation
+      const input = tf.tensor2d([snap.features]);
+      const qTensor = this.onlineNet.predict(input) as tf.Tensor;
+      const qValues = Array.from(qTensor.dataSync());
+      input.dispose();
+      qTensor.dispose();
+
+      const action = qValues.indexOf(Math.max(...qValues));
+      const direction = ACTION_DIRECTION[action as RLAction];
+
+      if (direction !== 0) {
+        const pnlPct = direction * (futureSnap.raw.price - snap.raw.price) / snap.raw.price;
+        const netPnl = pnlPct - transactionCost * 2;
+        trades++;
+        if (netPnl > 0) wins++;
+        totalPnl += netPnl;
+        returns.push(netPnl);
+      }
+    }
+
+    const avgReturn = returns.length > 0 ? returns.reduce((s, r) => s + r, 0) / returns.length : 0;
+    const stdReturn = returns.length > 1
+      ? Math.sqrt(returns.reduce((s, r) => s + (r - avgReturn) ** 2, 0) / (returns.length - 1))
+      : 1;
+
+    this.lastValidation = {
+      winRate: trades > 0 ? wins / trades : 0,
+      pnl: totalPnl,
+      sharpe: stdReturn > 0 ? (avgReturn / stdReturn) * Math.sqrt(252) : 0,
+    };
   }
 
   // ─── Sync target network weights from online network ─────────────────
@@ -431,6 +619,12 @@ class RLBacktestTrainer {
       replayBufferSize: this.replay.length,
       avgReward: this.avgReward,
       cumulativePnL: this.cumulativePnL,
+      validationWinRate: this.lastValidation.winRate,
+      validationPnL: this.lastValidation.pnl,
+      validationSharpe: this.lastValidation.sharpe,
+      trainFrequency: this.currentTrainFreq,
+      rewardMean: this.rewardRunMean,
+      rewardStd: Math.sqrt(Math.max(this.rewardRunVar, 0)),
     };
   }
 
@@ -519,6 +713,16 @@ class RLBacktestTrainer {
   runExternalTraining(buffer: readonly RLSnapshot[]): void {
     if (buffer.length >= this.config.minBufferSize) {
       this.runBacktestAndTrain(buffer);
+    }
+  }
+
+  // ─── Warm-start: reduce epsilon after pre-training ─────────────────
+
+  warmStart(targetEpsilon?: number): void {
+    const eps = targetEpsilon ?? 0.3;
+    if (this.trainSteps > 0) {
+      this.epsilon = Math.max(this.config.epsilonEnd, eps);
+      console.log(`[RLTrainer] Warm-started: ε=${this.epsilon.toFixed(3)}, steps=${this.trainSteps}`);
     }
   }
 

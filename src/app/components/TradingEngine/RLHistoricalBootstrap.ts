@@ -94,7 +94,7 @@ export async function bootstrapFromHistory(
     state.status = 'fetching';
     emit();
 
-    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=360`);
+    const resp = await fetch(`/api/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=1000`);
     if (!resp.ok) {
       throw new Error(`Klines API returned ${resp.status}`);
     }
@@ -136,7 +136,7 @@ export async function bootstrapFromHistory(
     emit();
 
     const buffer = collector.getBuffer();
-    const trainRounds = Math.min(10, Math.floor(buffer.length / 100));
+    const trainRounds = Math.min(30, Math.floor(buffer.length / 50));
 
     for (let r = 0; r < trainRounds; r++) {
       trainer.runExternalTraining(buffer);
@@ -148,6 +148,9 @@ export async function bootstrapFromHistory(
     // ─── 5. Auto-save model version ───────────────────────────────────
     state.status = 'saving';
     emit();
+
+    // Warm-start: reduce epsilon after pre-training (exploit what was learned)
+    trainer.warmStart(0.3);
 
     const tag = await trainer.saveModel(`bootstrap-${symbol}-${Date.now()}`);
     state.modelVersion = tag;

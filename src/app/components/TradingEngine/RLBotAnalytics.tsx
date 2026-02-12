@@ -59,6 +59,9 @@ interface MetricHistory {
   hedgeRatio: MetricPoint[];
   gridLevel: MetricPoint[];
   protectReward: MetricPoint[];
+  valWinRate: MetricPoint[];
+  valPnl: MetricPoint[];
+  valSharpe: MetricPoint[];
 }
 
 function pushMetric(arr: MetricPoint[], tick: number, value: number): void {
@@ -282,6 +285,7 @@ const RLBotAnalytics: React.FC = () => {
     reward: [], loss: [], epsilon: [], value: [], confidence: [],
     winRate: [], pnl: [], sharpe: [], actorLoss: [], criticLoss: [],
     hedgeRatio: [], gridLevel: [], protectReward: [],
+    valWinRate: [], valPnl: [], valSharpe: [],
   });
 
   const tickRef = useRef(0);
@@ -299,6 +303,9 @@ const RLBotAnalytics: React.FC = () => {
       pushMetric(h.winRate, t, rlTrainer.lastBacktestWinRate);
       pushMetric(h.pnl, t, rlTrainer.cumulativePnL);
       pushMetric(h.sharpe, t, rlTrainer.lastBacktestSharpe);
+      pushMetric(h.valWinRate, t, rlTrainer.validationWinRate);
+      pushMetric(h.valPnl, t, rlTrainer.validationPnL);
+      pushMetric(h.valSharpe, t, rlTrainer.validationSharpe);
     }
 
     if (protectAgent) {
@@ -464,6 +471,39 @@ const RLBotAnalytics: React.FC = () => {
               data={[{ tick: 0, value: rlTrainer.replayBufferSize }]}
               subLabel={`eff=${rlEfficiency.toFixed(4)}/step`}
             />
+          </Box>
+
+          {/* Validation (OOS) metrics */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1 }}>
+            <MetricCard
+              label="Val WinRate" value={`${(rlTrainer.validationWinRate * 100).toFixed(1)}%`}
+              color={rlTrainer.validationWinRate > 0.5 ? C.green : C.amber}
+              data={h.valWinRate} sparkOpts={{ min: 0, max: 1 }}
+              subLabel="OOS holdout 20%"
+            />
+            <MetricCard
+              label="Val PnL" value={rlTrainer.validationPnL.toFixed(4)}
+              color={rlTrainer.validationPnL >= 0 ? C.green : C.red}
+              data={h.valPnl} sparkOpts={{ zeroLine: true, fill: true }}
+            />
+            <MetricCard
+              label="Val Sharpe" value={rlTrainer.validationSharpe.toFixed(2)}
+              color={rlTrainer.validationSharpe > 0.5 ? C.green : C.amber}
+              data={h.valSharpe} sparkOpts={{ zeroLine: true }}
+            />
+            <Box sx={{ bgcolor: C.panel, border: `1px solid ${C.border}`, borderRadius: '4px', p: 0.8 }}>
+              <Typography sx={{ color: C.dim, fontSize: '0.55rem', letterSpacing: '0.08em', fontWeight: 600, textTransform: 'uppercase' }}>
+                Training Pace
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.2, mt: 0.3 }}>
+                <Typography sx={{ color: C.cyan, fontSize: '0.7rem', fontWeight: 800, fontFamily: 'monospace' }}>
+                  {rlTrainer.trainFrequency}t/round
+                </Typography>
+                <Typography sx={{ color: C.dim, fontSize: '0.5rem', fontFamily: 'monospace' }}>
+                  μ={rlTrainer.rewardMean.toFixed(3)} σ={rlTrainer.rewardStd.toFixed(3)}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
 
           {/* Action distribution */}
