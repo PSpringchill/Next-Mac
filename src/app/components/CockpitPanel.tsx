@@ -15,6 +15,7 @@ import FeatureRadar from './cockpit/FeatureRadar';
 import MarketStatePanel from './cockpit/MarketStatePanel';
 import EngineInstruments from './cockpit/EngineInstruments';
 import EcamWarningDisplay from './cockpit/EcamWarningDisplay';
+import TradingViewChart from './cockpit/TradingViewChart';
 
 // ─── COMPONENT ───
 const CockpitPanel: React.FC = () => {
@@ -631,6 +632,17 @@ const CockpitPanel: React.FC = () => {
           <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} linReg={signalFilter?.linReg} currentPrice={techData.midPrice} circuitBreaker={circuitBreaker} />
         </Box>
         <FeatureRadar featureWeights={featureWeights} />
+      </Box>
+
+      {/* ═══ TRADINGVIEW CHART — Technical Indicators ═══ */}
+      <Box sx={{ bgcolor: ECAM.PANEL, border: `1px solid ${ECAM.BORDER}`, p: 1 }}>
+        <TradingViewChart
+          currentPrice={techData.midPrice}
+          technicals={signalFilter?.ensemble?.technicals}
+          linReg={signalFilter?.linReg}
+          radarVector={radarVector}
+          bollingerBands={signalFilter?.ensemble?.technicals?.bollingerBands}
+        />
       </Box>
 
       {/* ═══ MAIN PANELS: PFD (Left) + E/WD (Right) ═══ */}

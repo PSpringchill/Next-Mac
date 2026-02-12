@@ -352,16 +352,20 @@ class EnsembleSignalGenerator {
         : patterns.noBearish ? 'No bearish patterns' : 'Bearish patterns detected',
     });
 
-    // 7. Regime Filters: RSI in range, MACD bullish, ATR normal
+    // 7. Regime Filters: RSI, MACD, ATR + BB, Stochastic, ADX (TradingView-accurate)
     const rsiOk = tech.rsi.inRange; // 30 < RSI < 70
     const macdOk = tech.macd.bullishCrossover || tech.macd.aligned === 'bullish';
     const atrOk = tech.atr.isNormal;
+    const bbOk = tech.bollingerBands.percentB < 0.8; // not at upper band
+    const stochOk = !tech.stochastic.isOverbought; // not overbought for longs
+    const adxTrend = tech.adx.isTrending && tech.adx.bullishDI; // trending + bullish DI
     const regimePassed = rsiOk && (macdOk || tech.macd.aligned !== 'bearish') && atrOk;
+    const tvBoost = (bbOk ? 0.05 : 0) + (stochOk ? 0.05 : 0) + (adxTrend ? 0.10 : 0);
     checks.push({
       name: 'Regime Filters',
       passed: regimePassed,
-      score: (rsiOk ? 0.35 : 0.0) + (macdOk ? 0.35 : tech.macd.aligned !== 'bearish' ? 0.15 : 0.0) + (atrOk ? 0.30 : 0.0),
-      reason: `RSI=${tech.rsi.value.toFixed(1)}${rsiOk ? '✓' : '✗'} MACD=${tech.macd.aligned}${macdOk ? '✓' : '✗'} ATR=${atrOk ? 'normal' : 'extreme'}`,
+      score: Math.min(1, (rsiOk ? 0.25 : 0.0) + (macdOk ? 0.25 : tech.macd.aligned !== 'bearish' ? 0.10 : 0.0) + (atrOk ? 0.20 : 0.0) + tvBoost),
+      reason: `RSI=${tech.rsi.value.toFixed(1)}${rsiOk ? '✓' : '✗'} MACD=${tech.macd.aligned}${macdOk ? '✓' : '✗'} ATR=${atrOk ? 'norm' : 'ext'} BB%=${tech.bollingerBands.percentB.toFixed(2)} Stoch=${tech.stochastic.k.toFixed(0)} ADX=${tech.adx.adx.toFixed(0)}${adxTrend ? '▲' : ''}`,
     });
 
     return checks;
@@ -446,16 +450,20 @@ class EnsembleSignalGenerator {
         : patterns.noBullish ? 'No bullish patterns' : 'Bullish patterns detected',
     });
 
-    // 7. Regime Filters: RSI in range, MACD bearish, ATR normal
+    // 7. Regime Filters: RSI, MACD, ATR + BB, Stochastic, ADX (TradingView-accurate)
     const rsiOk = tech.rsi.inRange;
     const macdOk = tech.macd.bearishCrossover || tech.macd.aligned === 'bearish';
     const atrOk = tech.atr.isNormal;
+    const bbOk = tech.bollingerBands.percentB > 0.2; // not at lower band
+    const stochOk = !tech.stochastic.isOversold; // not oversold for shorts
+    const adxTrend = tech.adx.isTrending && !tech.adx.bullishDI; // trending + bearish DI
     const regimePassed = rsiOk && (macdOk || tech.macd.aligned !== 'bullish') && atrOk;
+    const tvBoost = (bbOk ? 0.05 : 0) + (stochOk ? 0.05 : 0) + (adxTrend ? 0.10 : 0);
     checks.push({
       name: 'Regime Filters',
       passed: regimePassed,
-      score: (rsiOk ? 0.35 : 0.0) + (macdOk ? 0.35 : tech.macd.aligned !== 'bullish' ? 0.15 : 0.0) + (atrOk ? 0.30 : 0.0),
-      reason: `RSI=${tech.rsi.value.toFixed(1)}${rsiOk ? '✓' : '✗'} MACD=${tech.macd.aligned}${macdOk ? '✓' : '✗'} ATR=${atrOk ? 'normal' : 'extreme'}`,
+      score: Math.min(1, (rsiOk ? 0.25 : 0.0) + (macdOk ? 0.25 : tech.macd.aligned !== 'bullish' ? 0.10 : 0.0) + (atrOk ? 0.20 : 0.0) + tvBoost),
+      reason: `RSI=${tech.rsi.value.toFixed(1)}${rsiOk ? '✓' : '✗'} MACD=${tech.macd.aligned}${macdOk ? '✓' : '✗'} ATR=${atrOk ? 'norm' : 'ext'} BB%=${tech.bollingerBands.percentB.toFixed(2)} Stoch=${tech.stochastic.k.toFixed(0)} ADX=${tech.adx.adx.toFixed(0)}${adxTrend ? '▼' : ''}`,
     });
 
     return checks;

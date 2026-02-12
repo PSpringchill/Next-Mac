@@ -1,5 +1,17 @@
-// ─── Technical Indicators: RSI, MACD, ATR ────────────────────────────────────
-// Rolling computations over price series for regime filtering.
+// ─── Technical Indicators (TradingView-Accurate) ─────────────────────────────
+// Powered by the `technicalindicators` library — same calculations as TradingView.
+// Provides RSI, MACD, ATR, Bollinger Bands, Stochastic, ADX via streaming API.
+
+import {
+  RSI as TVRsi,
+  MACD as TVMacd,
+  ATR as TVAtr,
+  BollingerBands as TVBB,
+  Stochastic as TVStoch,
+  ADX as TVAdx,
+} from 'technicalindicators';
+
+// ─── State Interfaces ────────────────────────────────────────────────────────
 
 export interface RSIState {
   value: number;          // RSI [0, 100]
@@ -24,42 +36,82 @@ export interface ATRState {
   isNormal: boolean;      // 10th < ATR < 90th percentile
 }
 
+export interface BollingerBandsState {
+  upper: number;          // Upper band (SMA + stdDev * k)
+  middle: number;         // Middle band (SMA)
+  lower: number;          // Lower band (SMA - stdDev * k)
+  bandwidth: number;      // (upper - lower) / middle — volatility measure
+  percentB: number;       // (price - lower) / (upper - lower) — position within bands
+  squeeze: boolean;       // bandwidth < 0.02 — low volatility compression
+}
+
+export interface StochasticState {
+  k: number;              // %K (fast stochastic)
+  d: number;              // %D (signal line)
+  isOverbought: boolean;  // K > 80
+  isOversold: boolean;    // K < 20
+  bullishCrossover: boolean; // K crosses above D from oversold zone
+  bearishCrossover: boolean; // K crosses below D from overbought zone
+}
+
+export interface ADXState {
+  adx: number;            // ADX value [0, 100]
+  pdi: number;            // +DI (positive directional indicator)
+  mdi: number;            // -DI (negative directional indicator)
+  isTrending: boolean;    // ADX > 25
+  isStrong: boolean;      // ADX > 40
+  bullishDI: boolean;     // +DI > -DI
+}
+
 export interface TechnicalState {
   rsi: RSIState;
   macd: MACDState;
   atr: ATRState;
+  bollingerBands: BollingerBandsState;
+  stochastic: StochasticState;
+  adx: ADXState;
 }
 
+// ─── Default (empty) states for warmup period ────────────────────────────────
+
+const DEFAULT_RSI: RSIState = { value: 50, isOverbought: false, isOversold: false, inRange: true };
+const DEFAULT_MACD: MACDState = { macdLine: 0, signalLine: 0, histogram: 0, bullishCrossover: false, bearishCrossover: false, aligned: 'neutral' };
+const DEFAULT_ATR: ATRState = { value: 0, percentile: 0.5, isExtreme: false, isNormal: true };
+const DEFAULT_BB: BollingerBandsState = { upper: 0, middle: 0, lower: 0, bandwidth: 0, percentB: 0.5, squeeze: false };
+const DEFAULT_STOCH: StochasticState = { k: 50, d: 50, isOverbought: false, isOversold: false, bullishCrossover: false, bearishCrossover: false };
+const DEFAULT_ADX: ADXState = { adx: 0, pdi: 0, mdi: 0, isTrending: false, isStrong: false, bullishDI: false };
+
 class TechnicalIndicators {
-  // RSI
-  private readonly rsiPeriod: number;
-  private gains: number[] = [];
-  private losses: number[] = [];
-  private prevPrice: number = 0;
-  private avgGain: number = 0;
-  private avgLoss: number = 0;
-  private rsiCount: number = 0;
+  // ─── Library indicator instances ─────────────────────────────────────────
+  private rsiIndicator: TVRsi;
+  private macdIndicator: TVMacd;
+  private bbIndicator: TVBB;
+  private atrIndicator: TVAtr;
+  private stochIndicator: TVStoch;
+  private adxIndicator: TVAdx;
 
-  // MACD
-  private readonly fastPeriod: number;
-  private readonly slowPeriod: number;
-  private readonly signalPeriod: number;
-  private fastEMA: number = 0;
-  private slowEMA: number = 0;
-  private signalEMA: number = 0;
-  private prevMacdLine: number = 0;
-  private macdCount: number = 0;
+  // ─── Previous values for crossover detection ─────────────────────────────
+  private prevHistogram: number = 0;
+  private prevStochK: number = 50;
+  private prevStochD: number = 50;
+  private lastRsi: RSIState = { ...DEFAULT_RSI };
+  private lastMacd: MACDState = { ...DEFAULT_MACD };
+  private lastBB: BollingerBandsState = { ...DEFAULT_BB };
+  private lastStoch: StochasticState = { ...DEFAULT_STOCH };
+  private lastAdx: ADXState = { ...DEFAULT_ADX };
 
-  // ATR
-  private readonly atrPeriod: number;
-  private atrValues: number[] = [];
+  // ─── ATR history for percentile ranking ──────────────────────────────────
   private atrHistory: number[] = [];
-  private prevCandle: { high: number; low: number; close: number } | null = null;
   private readonly atrHistorySize: number = 200;
 
-  // Price tracking for candle simulation
+  // ─── Tick-to-candle aggregator (for ATR, Stochastic, ADX) ────────────────
   private tickPrices: number[] = [];
   private readonly tickWindow: number = 20; // ticks per pseudo-candle
+  private lastCandle: { high: number; low: number; close: number } | null = null;
+  private lastATR: ATRState = { ...DEFAULT_ATR };
+
+  // Config
+  private readonly rsiPeriod: number;
 
   constructor(
     rsiPeriod: number = 14,
@@ -69,154 +121,124 @@ class TechnicalIndicators {
     atrPeriod: number = 14,
   ) {
     this.rsiPeriod = rsiPeriod;
-    this.fastPeriod = fastPeriod;
-    this.slowPeriod = slowPeriod;
-    this.signalPeriod = signalPeriod;
-    this.atrPeriod = atrPeriod;
+
+    // Initialize library indicators in streaming mode (empty values)
+    this.rsiIndicator = new TVRsi({ period: rsiPeriod, values: [] });
+    this.macdIndicator = new TVMacd({
+      fastPeriod,
+      slowPeriod,
+      signalPeriod,
+      SimpleMAOscillator: false,
+      SimpleMASignal: false,
+      values: [],
+    });
+    this.bbIndicator = new TVBB({ period: 20, stdDev: 2, values: [] });
+    this.atrIndicator = new TVAtr({ period: atrPeriod, high: [], low: [], close: [] });
+    this.stochIndicator = new TVStoch({ period: 14, signalPeriod: 3, high: [], low: [], close: [] });
+    this.adxIndicator = new TVAdx({ period: atrPeriod, high: [], low: [], close: [] });
   }
 
   update(price: number): TechnicalState {
-    this.tickPrices.push(price);
     const rsi = this.updateRSI(price);
     const macd = this.updateMACD(price);
-    const atr = this.updateATR(price);
-    this.prevPrice = price;
-    return { rsi, macd, atr };
+    const bollingerBands = this.updateBB(price);
+
+    // Candle-based indicators: aggregate ticks, update on candle completion
+    this.tickPrices.push(price);
+    let atr = this.lastATR;
+    let stochastic = this.lastStoch;
+    let adx = this.lastAdx;
+
+    if (this.tickPrices.length >= this.tickWindow) {
+      const candle = this.buildCandle();
+      atr = this.updateATR(candle);
+      stochastic = this.updateStochastic(candle);
+      adx = this.updateADX(candle);
+      this.lastCandle = candle;
+      this.tickPrices = [price]; // start next window
+    }
+
+    return { rsi, macd, atr, bollingerBands, stochastic, adx };
   }
 
-  // ─── RSI ─────────────────────────────────────────────────────────────────
+  // ─── Tick-to-candle helper ─────────────────────────────────────────────
+  private buildCandle(): { high: number; low: number; close: number } {
+    const high = Math.max(...this.tickPrices);
+    const low = Math.min(...this.tickPrices);
+    const close = this.tickPrices[this.tickPrices.length - 1];
+    return { high, low, close };
+  }
+
+  // ─── RSI (TradingView-accurate Wilder's smoothing) ─────────────────────
   private updateRSI(price: number): RSIState {
-    if (this.prevPrice === 0) {
-      return { value: 50, isOverbought: false, isOversold: false, inRange: true };
-    }
-
-    const change = price - this.prevPrice;
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? -change : 0;
-
-    this.rsiCount++;
-
-    if (this.rsiCount <= this.rsiPeriod) {
-      this.gains.push(gain);
-      this.losses.push(loss);
-      if (this.rsiCount === this.rsiPeriod) {
-        this.avgGain = this.gains.reduce((s, g) => s + g, 0) / this.rsiPeriod;
-        this.avgLoss = this.losses.reduce((s, l) => s + l, 0) / this.rsiPeriod;
-      }
-      return { value: 50, isOverbought: false, isOversold: false, inRange: true };
-    }
-
-    // Wilder's smoothing
-    this.avgGain = (this.avgGain * (this.rsiPeriod - 1) + gain) / this.rsiPeriod;
-    this.avgLoss = (this.avgLoss * (this.rsiPeriod - 1) + loss) / this.rsiPeriod;
-
-    const rs = this.avgLoss > 0 ? this.avgGain / this.avgLoss : 100;
-    const rsiValue = 100 - (100 / (1 + rs));
-
-    return {
+    const val = this.rsiIndicator.nextValue(price);
+    if (val === undefined) return this.lastRsi;
+    const rsiValue = val;
+    this.lastRsi = {
       value: rsiValue,
       isOverbought: rsiValue > 70,
       isOversold: rsiValue < 30,
       inRange: rsiValue > 30 && rsiValue < 70,
     };
+    return this.lastRsi;
   }
 
-  // ─── MACD ────────────────────────────────────────────────────────────────
+  // ─── MACD (TradingView-accurate EMA seeding) ──────────────────────────
   private updateMACD(price: number): MACDState {
-    this.macdCount++;
+    const val = this.macdIndicator.nextValue(price);
+    if (val === undefined || val.MACD === undefined) return this.lastMacd;
 
-    if (this.macdCount === 1) {
-      this.fastEMA = price;
-      this.slowEMA = price;
-      this.signalEMA = 0;
-      return { macdLine: 0, signalLine: 0, histogram: 0, bullishCrossover: false, bearishCrossover: false, aligned: 'neutral' };
-    }
-
-    // EMA update: EMA_new = price * k + EMA_old * (1 - k)
-    const fastK = 2 / (this.fastPeriod + 1);
-    const slowK = 2 / (this.slowPeriod + 1);
-    const signalK = 2 / (this.signalPeriod + 1);
-
-    this.fastEMA = price * fastK + this.fastEMA * (1 - fastK);
-    this.slowEMA = price * slowK + this.slowEMA * (1 - slowK);
-
-    const macdLine = this.fastEMA - this.slowEMA;
-
-    if (this.macdCount <= this.slowPeriod) {
-      this.signalEMA = macdLine;
-      this.prevMacdLine = macdLine;
-      return { macdLine, signalLine: macdLine, histogram: 0, bullishCrossover: false, bearishCrossover: false, aligned: 'neutral' };
-    }
-
-    this.signalEMA = macdLine * signalK + this.signalEMA * (1 - signalK);
-    const histogram = macdLine - this.signalEMA;
+    const macdLine = val.MACD;
+    const signalLine = val.signal ?? 0;
+    const histogram = val.histogram ?? 0;
 
     // Crossover detection
-    const prevHistogram = this.prevMacdLine - this.signalEMA; // approximate
-    const bullishCrossover = histogram > 0 && prevHistogram <= 0;
-    const bearishCrossover = histogram < 0 && prevHistogram >= 0;
+    const bullishCrossover = histogram > 0 && this.prevHistogram <= 0;
+    const bearishCrossover = histogram < 0 && this.prevHistogram >= 0;
+    this.prevHistogram = histogram;
 
     const aligned: 'bullish' | 'bearish' | 'neutral' =
-      macdLine > this.signalEMA && macdLine > 0 ? 'bullish' :
-      macdLine < this.signalEMA && macdLine < 0 ? 'bearish' : 'neutral';
+      macdLine > signalLine && macdLine > 0 ? 'bullish' :
+      macdLine < signalLine && macdLine < 0 ? 'bearish' : 'neutral';
 
-    this.prevMacdLine = macdLine;
-
-    return { macdLine, signalLine: this.signalEMA, histogram, bullishCrossover, bearishCrossover, aligned };
+    this.lastMacd = { macdLine, signalLine, histogram, bullishCrossover, bearishCrossover, aligned };
+    return this.lastMacd;
   }
 
-  // ─── ATR (tick-based approximation) ──────────────────────────────────────
-  private updateATR(price: number): ATRState {
-    if (this.tickPrices.length < 2) {
-      return { value: 0, percentile: 0.5, isExtreme: false, isNormal: true };
+  // ─── Bollinger Bands ───────────────────────────────────────────────────
+  private updateBB(price: number): BollingerBandsState {
+    const val = this.bbIndicator.nextValue(price);
+    if (val === undefined) return this.lastBB;
+
+    const bandwidth = val.middle > 0 ? (val.upper - val.lower) / val.middle : 0;
+    const range = val.upper - val.lower;
+    const percentB = range > 0 ? (price - val.lower) / range : 0.5;
+
+    this.lastBB = {
+      upper: val.upper,
+      middle: val.middle,
+      lower: val.lower,
+      bandwidth,
+      percentB,
+      squeeze: bandwidth < 0.02,
+    };
+    return this.lastBB;
+  }
+
+  // ─── ATR (TradingView-accurate True Range) ────────────────────────────
+  private updateATR(candle: { high: number; low: number; close: number }): ATRState {
+    const val = this.atrIndicator.nextValue(candle as { open: number; high: number; low: number; close: number });
+    if (val === undefined) return this.lastATR;
+
+    const atrValue = val;
+
+    // Track history for percentile
+    this.atrHistory.push(atrValue);
+    if (this.atrHistory.length > this.atrHistorySize) {
+      this.atrHistory.shift();
     }
 
-    // Use rolling window of prices to compute true range
-    if (this.tickPrices.length >= this.tickWindow) {
-      const window = this.tickPrices.slice(-this.tickWindow);
-      const high = Math.max(...window);
-      const low = Math.min(...window);
-      const close = window[window.length - 1];
-
-      let tr: number;
-      if (this.prevCandle) {
-        tr = Math.max(
-          high - low,
-          Math.abs(high - this.prevCandle.close),
-          Math.abs(low - this.prevCandle.close),
-        );
-      } else {
-        tr = high - low;
-      }
-
-      this.atrValues.push(tr);
-      if (this.atrValues.length > this.atrPeriod * 3) {
-        this.atrValues.shift();
-      }
-
-      this.atrHistory.push(tr);
-      if (this.atrHistory.length > this.atrHistorySize) {
-        this.atrHistory.shift();
-      }
-
-      this.prevCandle = { high, low, close };
-      // Reset tick window
-      this.tickPrices = [price];
-    }
-
-    // Compute ATR as SMA of recent true ranges
-    const period = Math.min(this.atrPeriod, this.atrValues.length);
-    if (period === 0) {
-      return { value: 0, percentile: 0.5, isExtreme: false, isNormal: true };
-    }
-
-    let sum = 0;
-    for (let i = this.atrValues.length - period; i < this.atrValues.length; i++) {
-      sum += this.atrValues[i];
-    }
-    const atrValue = sum / period;
-
-    // Percentile
+    // Percentile calculation
     let percentile = 0.5;
     if (this.atrHistory.length >= 5) {
       const sorted = [...this.atrHistory].sort((a, b) => a - b);
@@ -224,35 +246,82 @@ class TechnicalIndicators {
       percentile = rank / sorted.length;
     }
 
-    return {
+    this.lastATR = {
       value: atrValue,
       percentile,
       isExtreme: percentile > 0.9,
       isNormal: percentile > 0.1 && percentile < 0.9,
     };
+    return this.lastATR;
+  }
+
+  // ─── Stochastic Oscillator ────────────────────────────────────────────
+  private updateStochastic(candle: { high: number; low: number; close: number }): StochasticState {
+    const val = this.stochIndicator.nextValue(candle as never);
+    if (val === undefined) return this.lastStoch;
+
+    const k = val.k;
+    const d = val.d;
+
+    // Crossover detection from overbought/oversold zones
+    const bullishCrossover = k > d && this.prevStochK <= this.prevStochD && this.prevStochK < 20;
+    const bearishCrossover = k < d && this.prevStochK >= this.prevStochD && this.prevStochK > 80;
+    this.prevStochK = k;
+    this.prevStochD = d;
+
+    this.lastStoch = {
+      k,
+      d,
+      isOverbought: k > 80,
+      isOversold: k < 20,
+      bullishCrossover,
+      bearishCrossover,
+    };
+    return this.lastStoch;
+  }
+
+  // ─── ADX (Average Directional Index) ──────────────────────────────────
+  private updateADX(candle: { high: number; low: number; close: number }): ADXState {
+    const val = this.adxIndicator.nextValue(candle as never);
+    if (val === undefined) return this.lastAdx;
+
+    this.lastAdx = {
+      adx: val.adx,
+      pdi: val.pdi,
+      mdi: val.mdi,
+      isTrending: val.adx > 25,
+      isStrong: val.adx > 40,
+      bullishDI: val.pdi > val.mdi,
+    };
+    return this.lastAdx;
   }
 
   getRSI(): number {
-    const rs = this.avgLoss > 0 ? this.avgGain / this.avgLoss : 100;
-    return this.rsiCount >= this.rsiPeriod ? 100 - (100 / (1 + rs)) : 50;
+    return this.lastRsi.value;
   }
 
   reset(): void {
-    this.gains = [];
-    this.losses = [];
-    this.prevPrice = 0;
-    this.avgGain = 0;
-    this.avgLoss = 0;
-    this.rsiCount = 0;
-    this.fastEMA = 0;
-    this.slowEMA = 0;
-    this.signalEMA = 0;
-    this.prevMacdLine = 0;
-    this.macdCount = 0;
-    this.atrValues = [];
+    this.rsiIndicator = new TVRsi({ period: this.rsiPeriod, values: [] });
+    this.macdIndicator = new TVMacd({
+      fastPeriod: 12, slowPeriod: 26, signalPeriod: 9,
+      SimpleMAOscillator: false, SimpleMASignal: false, values: [],
+    });
+    this.bbIndicator = new TVBB({ period: 20, stdDev: 2, values: [] });
+    this.atrIndicator = new TVAtr({ period: this.rsiPeriod, high: [], low: [], close: [] });
+    this.stochIndicator = new TVStoch({ period: 14, signalPeriod: 3, high: [], low: [], close: [] });
+    this.adxIndicator = new TVAdx({ period: this.rsiPeriod, high: [], low: [], close: [] });
+    this.prevHistogram = 0;
+    this.prevStochK = 50;
+    this.prevStochD = 50;
+    this.lastRsi = { ...DEFAULT_RSI };
+    this.lastMacd = { ...DEFAULT_MACD };
+    this.lastBB = { ...DEFAULT_BB };
+    this.lastStoch = { ...DEFAULT_STOCH };
+    this.lastAdx = { ...DEFAULT_ADX };
     this.atrHistory = [];
-    this.prevCandle = null;
     this.tickPrices = [];
+    this.lastCandle = null;
+    this.lastATR = { ...DEFAULT_ATR };
   }
 }
 
