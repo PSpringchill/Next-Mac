@@ -7,6 +7,7 @@ import PaperTradingEngine from './PaperTradingEngine';
 import RLDataCollector from './RLDataCollector';
 import RLBacktestTrainer from './RLBacktestTrainer';
 import A3CProtectAgent from './A3CProtectAgent';
+import IndicatorProfiler from './IndicatorProfiler';
 import { bootstrapFromHistory } from './RLHistoricalBootstrap';
 
 const THROTTLE_MS = 800;
@@ -31,11 +32,13 @@ const LiveExecutionBridge = () => {
   const updateRLCollector = useTradingStore((state) => state.updateRLCollector);
   const updateProtectAgent = useTradingStore((state) => state.updateProtectAgent);
   const updateBootstrapState = useTradingStore((state) => state.updateBootstrapState);
+  const updateIndicatorProfiler = useTradingStore((state) => state.updateIndicatorProfiler);
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const rlCollectorRef = useRef<RLDataCollector | null>(null);
   const rlTrainerRef = useRef<RLBacktestTrainer | null>(null);
   const protectAgentRef = useRef<A3CProtectAgent | null>(null);
+  const profilerRef = useRef<IndicatorProfiler | null>(null);
   const priceHistoryRef = useRef<number[]>([]);
   const lastUpdateRef = useRef(0);
   const processingRef = useRef(false);
@@ -55,6 +58,9 @@ const LiveExecutionBridge = () => {
   if (!protectAgentRef.current) {
     protectAgentRef.current = new A3CProtectAgent();
   }
+  if (!profilerRef.current) {
+    profilerRef.current = new IndicatorProfiler();
+  }
 
   // ─── Historical Bootstrap: fetch 6h of 1m candles on mount ────────
   useEffect(() => {
@@ -66,13 +72,17 @@ const LiveExecutionBridge = () => {
     const protect = protectAgentRef.current;
     if (!collector || !trainer) return;
 
+    const profiler = profilerRef.current;
+
     bootstrapFromHistory(symbol, collector, trainer, protect, (bs) => {
       updateBootstrapState(bs);
-    }).then((final) => {
+    }, profiler).then((final) => {
       updateBootstrapState(final);
       // Update store with post-bootstrap trainer state
       updateRLTrainer(trainer.getState());
       updateRLCollector(collector.getState());
+      // Update store with initial profiler calibration
+      if (profiler) updateIndicatorProfiler(profiler.getState());
     }).catch(err => {
       console.error('[LiveExecutionBridge] bootstrap error:', err);
     });
@@ -168,6 +178,19 @@ const LiveExecutionBridge = () => {
         updateRLTrainer(rlState);
         updateRLCollector(rlCollector.getState());
 
+        // Feed IndicatorProfiler with live tick (current + lookAhead-ago snapshot)
+        const profiler = profilerRef.current;
+        if (profiler) {
+          const buf = rlCollector.getBuffer();
+          const lookBack = 30; // match profiler's lookAheadTicks
+          const pastSnap = buf.length > lookBack ? buf[buf.length - 1 - lookBack] : null;
+          profiler.feedLiveTick(snapshot, pastSnap ?? null);
+          // Update store every 10 ticks (not every tick — too heavy)
+          if (tickCountRef.current % 10 === 0) {
+            updateIndicatorProfiler(profiler.getState());
+          }
+        }
+
         // Auto-save models periodically
         tickCountRef.current++;
         if (tickCountRef.current % MODEL_AUTOSAVE_INTERVAL === 0 && rlState.totalTrainSteps > 0) {
@@ -238,7 +261,7 @@ const LiveExecutionBridge = () => {
       });
     })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
       .finally(() => { processingRef.current = false; });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent, symbol]);
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent, updateIndicatorProfiler, symbol]);
 
   return null;
 };

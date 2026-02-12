@@ -11,7 +11,7 @@ import ParetoMonitor from './ParetoMonitor';
 import { ECAM, EcamMessage, ChecklistItem, SmoothedTechData, severityOrder } from './cockpit/ecamTheme';
 import SpeedTape from './cockpit/SpeedTape';
 import AttitudeIndicator from './cockpit/AttitudeIndicator';
-import FeatureRadar from './cockpit/FeatureRadar';
+import IndicatorRadar from './cockpit/IndicatorRadar';
 import MarketStatePanel from './cockpit/MarketStatePanel';
 import EngineInstruments from './cockpit/EngineInstruments';
 import EcamWarningDisplay from './cockpit/EcamWarningDisplay';
@@ -27,6 +27,7 @@ const CockpitPanel: React.FC = () => {
   const dynamicRegime = useTradingStore((s) => s.dynamicRegime);
   const signalFilter = useTradingStore((s) => s.signalFilter);
   const circuitBreaker = useTradingStore((s) => s.circuitBreaker);
+  const indicatorProfiler = useTradingStore((s) => s.indicatorProfiler);
   const [wallRangePct, setWallRangePct] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('speedTapeScale');
@@ -68,7 +69,6 @@ const CockpitPanel: React.FC = () => {
   // Refs to hold smoothed state across renders
   const smoothedTechRef = useRef<Record<string, number>>({});
   const smoothedVolBinsRef = useRef<{ bidVol: number; askVol: number }[]>([]);
-  const smoothedFeatureRef = useRef<number[]>([]);
   const smoothedPriceRoCRef = useRef<number>(0);
   const smoothedVolRoCRef = useRef<number>(0);
   const smoothedMlRef = useRef<{ signalConf: number; regimeScore: number }>({ signalConf: 0, regimeScore: 0 });
@@ -203,34 +203,6 @@ const CockpitPanel: React.FC = () => {
     return { bins, totalBidVol, totalAskVol };
   }, [parsedBook, technicalData, wallRangePct]);
 
-  // ─── FEATURE IMPORTANCE (raw, for radar chart) ───
-  const rawFeatureWeights = useMemo(() => {
-    if (!technicalData) return [];
-    const raw = [
-      { label: 'OBI', value: Math.min(Math.abs(technicalData.obi) / 100, 1) },
-      { label: 'RSI', value: Math.abs(technicalData.rsi - 50) / 50 },
-      { label: 'MACD', value: Math.min(Math.abs(technicalData.macd) / 50, 1) },
-      { label: 'WALLS', value: Math.abs(technicalData.wallStrength - 0.5) * 2 },
-      { label: 'SPREAD', value: Math.min(technicalData.spreadPct / 0.1, 1) },
-      { label: 'IMBAL', value: Math.min(Math.abs(technicalData.imbalance) / 100, 1) },
-      { label: 'DEPTH', value: Math.min(technicalData.totalDepth / 50000000, 1) },
-      { label: 'LIQ', value: Math.min(technicalData.liquidity / 50, 1) },
-    ];
-    if (mlPrediction?.featureImportance) {
-      const fi = mlPrediction.featureImportance;
-      const cats: Record<string, number> = { base: 0, imbalance: 0, volume: 0, liquidity: 0 };
-      fi.forEach((v, k) => {
-        if (k.startsWith('imbalance')) cats.imbalance += v;
-        else if (k.startsWith('vol_prof')) cats.volume += v;
-        else if (k.startsWith('liq_depth')) cats.liquidity += v;
-        else cats.base += v;
-      });
-      const total = Object.values(cats).reduce((a, b) => a + b, 0) || 1;
-      raw.push({ label: 'ML:BASE', value: Math.min(cats.base / total * 4, 1) });
-      raw.push({ label: 'ML:IMBL', value: Math.min(cats.imbalance / total * 4, 1) });
-    }
-    return raw;
-  }, [technicalData, mlPrediction]);
 
   // Raw volume RoC
   const rawVolRoC = useMemo(() => {
@@ -318,18 +290,6 @@ const CockpitPanel: React.FC = () => {
     return { bins: smoothed, totalBidVol, totalAskVol };
   }, [rawVolumeProfile]);
 
-  // Smooth feature weights for radar
-  const featureWeights = useMemo(() => {
-    const raw = rawFeatureWeights;
-    if (!raw.length) return raw;
-    const prev = smoothedFeatureRef.current;
-    const smoothed = raw.map((fw, i) => ({
-      label: fw.label,
-      value: smoothEma(prev[i] ?? fw.value, fw.value, SMOOTH_ALPHA_SLOW),
-    }));
-    smoothedFeatureRef.current = smoothed.map(f => f.value);
-    return smoothed;
-  }, [rawFeatureWeights]);
 
   // Smooth RoC gauges
   const priceRoC = useMemo(() => {
@@ -631,7 +591,7 @@ const CockpitPanel: React.FC = () => {
           <SpeedTape smoothedTech={techData} wallRangePct={wallRangePct} priceRoC={priceRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} onScaleUp={handleScaleUp} onScaleDown={handleScaleDown} />
           <AttitudeIndicator volumeProfile={volumeProfile} volRoC={volRoC} radarVector={radarVector} dynamicRegime={dynamicRegime} linReg={signalFilter?.linReg} currentPrice={techData.midPrice} circuitBreaker={circuitBreaker} />
         </Box>
-        <FeatureRadar featureWeights={featureWeights} />
+        <IndicatorRadar profilerState={indicatorProfiler} />
       </Box>
 
       {/* ═══ TRADINGVIEW CHART — Technical Indicators ═══ */}

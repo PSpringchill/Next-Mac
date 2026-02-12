@@ -19,6 +19,7 @@ import type { RLTrainerState } from '../app/components/TradingEngine/RLBacktestT
 import type { RLCollectorState } from '../app/components/TradingEngine/RLDataCollector';
 import type { ProtectAgentState } from '../app/components/TradingEngine/A3CProtectAgent';
 import type { BootstrapState } from '../app/components/TradingEngine/RLHistoricalBootstrap';
+import type { IndicatorProfilerState } from '../app/components/TradingEngine/IndicatorProfiler';
 
 interface TradingState {
   // Current market data
@@ -90,6 +91,9 @@ interface TradingState {
   // RL Historical Bootstrap
   bootstrapState: BootstrapState | null;
 
+  // Indicator Profiler: optimal indicator value configurations
+  indicatorProfiler: IndicatorProfilerState | null;
+
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -114,6 +118,7 @@ interface TradingState {
   updateRLCollector: (rc: RLCollectorState) => void;
   updateProtectAgent: (pa: ProtectAgentState) => void;
   updateBootstrapState: (bs: BootstrapState) => void;
+  updateIndicatorProfiler: (ip: IndicatorProfilerState) => void;
   reset: () => void;
 }
 
@@ -145,7 +150,8 @@ const initialState = {
   rlTrainer: null,
   rlCollector: null,
   protectAgent: null,
-  bootstrapState: null
+  bootstrapState: null,
+  indicatorProfiler: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -254,6 +260,10 @@ export const useTradingStore = create<TradingState>()(
 
     updateBootstrapState: (bs) => set((state) => {
       state.bootstrapState = bs;
+    }),
+
+    updateIndicatorProfiler: (ip) => set((state) => {
+      state.indicatorProfiler = JSON.parse(JSON.stringify(ip));
     }),
     
     reset: () => set(() => initialState)

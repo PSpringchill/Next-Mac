@@ -7,6 +7,7 @@
 import RLDataCollector from './RLDataCollector';
 import RLBacktestTrainer from './RLBacktestTrainer';
 import A3CProtectAgent from './A3CProtectAgent';
+import IndicatorProfiler from './IndicatorProfiler';
 
 // ─── Kline format from Binance ──────────────────────────────────────────────
 // [openTime, open, high, low, close, volume, closeTime, quoteAssetVolume, ...]
@@ -52,6 +53,7 @@ export async function bootstrapFromHistory(
   trainer: RLBacktestTrainer,
   protectAgent: A3CProtectAgent | null,
   onProgress?: (state: BootstrapState) => void,
+  indicatorProfiler?: IndicatorProfiler | null,
 ): Promise<BootstrapState> {
   const state: BootstrapState = {
     status: 'idle',
@@ -136,6 +138,12 @@ export async function bootstrapFromHistory(
     emit();
 
     const buffer = collector.getBuffer();
+
+    // ─── 3b. Calibrate IndicatorProfiler from bootstrap buffer ──────
+    if (indicatorProfiler) {
+      indicatorProfiler.calibrateFromBuffer(buffer);
+      console.log(`[Bootstrap] IndicatorProfiler calibrated from ${buffer.length} snapshots`);
+    }
     const trainRounds = Math.min(30, Math.floor(buffer.length / 50));
 
     for (let r = 0; r < trainRounds; r++) {
