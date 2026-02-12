@@ -33,6 +33,7 @@ const LiveExecutionBridge = () => {
   const updateProtectAgent = useTradingStore((state) => state.updateProtectAgent);
   const updateBootstrapState = useTradingStore((state) => state.updateBootstrapState);
   const updateIndicatorProfiler = useTradingStore((state) => state.updateIndicatorProfiler);
+  const updateBotPortfolio = useTradingStore((state) => state.updateBotPortfolio);
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const rlCollectorRef = useRef<RLDataCollector | null>(null);
@@ -139,6 +140,26 @@ const LiveExecutionBridge = () => {
       }
       if (monitoring.circuitBreaker) {
         updateCircuitBreaker(monitoring.circuitBreaker);
+      }
+
+      // ─── Bot Portfolio: always push current state ────────────────
+      {
+        const ps = engine.getPortfolioState();
+        const allTrades = engine.getTrades();
+        const recentTrades = allTrades.slice(-50);
+        const wins = recentTrades.filter(t => (t.pnl ?? 0) > 0).length;
+        updateBotPortfolio({
+          balance: engine.getBalance(),
+          equity: engine.getEquity(marketData.price),
+          position: ps.position,
+          avgEntryPrice: engine.getAvgEntryPrice(),
+          unrealizedPnl: ps.unrealizedPnl,
+          dailyPnl: ps.dailyPnl,
+          tradesToday: ps.tradesToday,
+          maxDrawdownToday: ps.maxDrawdownToday,
+          winRate: recentTrades.length > 0 ? wins / recentTrades.length : 0,
+          trades: recentTrades,
+        });
       }
 
       // ─── RL Data Collection & Training ────────────────────────────
@@ -261,7 +282,7 @@ const LiveExecutionBridge = () => {
       });
     })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
       .finally(() => { processingRef.current = false; });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent, updateIndicatorProfiler, symbol]);
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent, updateIndicatorProfiler, updateBotPortfolio, symbol]);
 
   return null;
 };

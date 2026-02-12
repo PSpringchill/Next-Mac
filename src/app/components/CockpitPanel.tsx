@@ -28,6 +28,7 @@ const CockpitPanel: React.FC = () => {
   const signalFilter = useTradingStore((s) => s.signalFilter);
   const circuitBreaker = useTradingStore((s) => s.circuitBreaker);
   const indicatorProfiler = useTradingStore((s) => s.indicatorProfiler);
+  const botPortfolio = useTradingStore((s) => s.botPortfolio);
   const [wallRangePct, setWallRangePct] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('speedTapeScale');
@@ -602,6 +603,7 @@ const CockpitPanel: React.FC = () => {
           linReg={signalFilter?.linReg}
           radarVector={radarVector}
           bollingerBands={signalFilter?.ensemble?.technicals?.bollingerBands}
+          botPortfolio={botPortfolio}
         />
       </Box>
 

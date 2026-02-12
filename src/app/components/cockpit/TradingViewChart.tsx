@@ -6,6 +6,7 @@ import { ECAM } from './ecamTheme';
 import type { TechnicalState, BollingerBandsState } from '../TradingEngine/TechnicalIndicators';
 import type { LinRegState } from '../TradingEngine/LinearRegressionTarget';
 import type { RadarVectorState } from '../TradingEngine/RadarVector';
+import type { BotPortfolio } from '@stores/tradingStore';
 
 // ─── Lazy-load lightweight-charts to avoid SSR issues ────────────────────────
 type LWC = typeof import('lightweight-charts');
@@ -25,6 +26,7 @@ interface TradingViewChartProps {
   linReg?: LinRegState | null;
   radarVector?: RadarVectorState | null;
   bollingerBands?: BollingerBandsState | null;
+  botPortfolio?: BotPortfolio | null;
 }
 
 // ─── Color Theme ─────────────────────────────────────────────────────────────
@@ -37,6 +39,11 @@ const CHART_COLORS = {
   bbUpper: 'rgba(255,170,0,0.4)',
   bbLower: 'rgba(255,170,0,0.4)',
   bbFill: 'rgba(255,170,0,0.05)',
+  equityLine: '#00ff88',
+  pnlPos: 'rgba(0,255,136,0.6)',
+  pnlNeg: 'rgba(255,34,34,0.6)',
+  buyMarker: '#00ff88',
+  sellMarker: '#ff2222',
   bbMiddle: 'rgba(255,170,0,0.6)',
   linRegTarget: 'rgba(255,0,255,0.5)',
   linRegUpper: 'rgba(255,0,255,0.15)',
@@ -63,10 +70,12 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
   linReg,
   radarVector,
   bollingerBands,
+  botPortfolio,
 }) => {
   const mainChartRef = useRef<HTMLDivElement>(null);
   const rsiChartRef = useRef<HTMLDivElement>(null);
   const macdChartRef = useRef<HTMLDivElement>(null);
+  const equityChartRef = useRef<HTMLDivElement>(null);
 
   // Store chart & series instances
   const mainChartInstance = useRef<any>(null);
@@ -87,6 +96,11 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
   const macdSignalRef = useRef<any>(null);
   const macdHistRef = useRef<any>(null);
 
+  const equityChartInstance = useRef<any>(null);
+  const equitySeriesRef = useRef<any>(null);
+  const pnlHistRef = useRef<any>(null);
+
+  const lastTradeCountRef = useRef<number>(0);
   const tickCountRef = useRef<number>(0);
   const initRef = useRef<boolean>(false);
 
@@ -173,6 +187,32 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
         lastValueVisible: false,
       });
 
+      // ─── Equity / P&L chart ─────────────────────────────────────────
+      if (equityChartRef.current) {
+        const equityChart = createChart(equityChartRef.current, {
+          ...commonOpts,
+          width: equityChartRef.current.clientWidth,
+          height: 90,
+          rightPriceScale: {
+            ...commonOpts.rightPriceScale,
+            scaleMargins: { top: 0.1, bottom: 0.1 },
+          },
+        });
+        equityChartInstance.current = equityChart;
+
+        equitySeriesRef.current = equityChart.addLineSeries({
+          color: CHART_COLORS.equityLine,
+          lineWidth: 2,
+          priceLineVisible: true,
+          lastValueVisible: true,
+        });
+
+        pnlHistRef.current = equityChart.addHistogramSeries({
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+      }
+
       // ─── RSI chart ────────────────────────────────────────────────
       const rsiChart = createChart(rsiChartRef.current!, {
         ...commonOpts,
@@ -242,6 +282,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
         if (range) {
           rsiChart.timeScale().setVisibleLogicalRange(range);
           macdChart.timeScale().setVisibleLogicalRange(range);
+          equityChartInstance.current?.timeScale().setVisibleLogicalRange(range);
         }
       });
 
@@ -256,6 +297,9 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
         if (macdChartRef.current) {
           macdChart.applyOptions({ width: macdChartRef.current.clientWidth });
         }
+        if (equityChartRef.current && equityChartInstance.current) {
+          equityChartInstance.current.applyOptions({ width: equityChartRef.current.clientWidth });
+        }
       });
       if (mainChartRef.current) resizeObserver.observe(mainChartRef.current);
 
@@ -264,6 +308,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
         mainChart.remove();
         rsiChart.remove();
         macdChart.remove();
+        equityChartInstance.current?.remove();
       };
     });
   }, []);
@@ -311,6 +356,42 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
       });
     }
   }, [currentPrice, technicals, linReg, bollingerBands]);
+
+  // ─── Update equity & P&L chart + trade markers ─────────────────────
+  useEffect(() => {
+    if (!botPortfolio || !currentPrice) return;
+    const time = Math.floor(Date.now() / 1000) as any;
+
+    // Equity line
+    equitySeriesRef.current?.update({ time, value: botPortfolio.equity });
+
+    // P&L histogram bar
+    pnlHistRef.current?.update({
+      time,
+      value: botPortfolio.dailyPnl,
+      color: botPortfolio.dailyPnl >= 0 ? CHART_COLORS.pnlPos : CHART_COLORS.pnlNeg,
+    });
+
+    // Trade markers on price chart: add markers for new trades
+    if (botPortfolio.trades.length > lastTradeCountRef.current && priceSeriesRef.current) {
+      const newTrades = botPortfolio.trades.slice(lastTradeCountRef.current);
+      lastTradeCountRef.current = botPortfolio.trades.length;
+
+      try {
+        // Build full marker list from all recent trades
+        const markers = botPortfolio.trades.map(t => ({
+          time: (Math.floor(t.timestamp / 1000)) as any,
+          position: t.type === 'BUY' ? 'belowBar' as const : 'aboveBar' as const,
+          color: t.type === 'BUY' ? CHART_COLORS.buyMarker : CHART_COLORS.sellMarker,
+          shape: t.type === 'BUY' ? 'arrowUp' as const : 'arrowDown' as const,
+          text: `${t.type} ${t.size.toFixed(4)} @ ${t.price.toFixed(2)}${t.pnl ? ` P&L:${t.pnl.toFixed(2)}` : ''}`,
+        })).sort((a: any, b: any) => a.time - b.time);
+        priceSeriesRef.current.setMarkers(markers);
+      } catch {
+        // markers API may not be available in all versions
+      }
+    }
+  }, [botPortfolio, currentPrice]);
 
   // ─── Status bar ────────────────────────────────────────────────────────
   const bb = bollingerBands ?? technicals?.bollingerBands;
@@ -396,6 +477,46 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
         </Typography>
       </Box>
       <Box ref={macdChartRef} sx={{ width: '100%' }} />
+
+      {/* Equity / P&L pane label */}
+      <Box sx={{
+        px: 1, py: 0.25, borderTop: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <Typography sx={{ color: ECAM.DIM, fontSize: '0.55rem', fontFamily: 'monospace' }}>EQUITY / P&L</Typography>
+        {botPortfolio && (
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Typography sx={{ color: ECAM.WHITE, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+              BAL:{botPortfolio.balance.toFixed(2)}
+            </Typography>
+            <Typography sx={{ color: ECAM.CYAN, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+              EQ:{botPortfolio.equity.toFixed(2)}
+            </Typography>
+            <Typography sx={{
+              color: botPortfolio.position > 0 ? ECAM.GREEN : botPortfolio.position < 0 ? ECAM.RED : ECAM.DIM,
+              fontSize: '0.55rem', fontFamily: 'monospace', fontWeight: 700,
+            }}>
+              POS:{botPortfolio.position.toFixed(4)}{botPortfolio.position > 0 ? `@${botPortfolio.avgEntryPrice.toFixed(2)}` : ''}
+            </Typography>
+            <Typography sx={{
+              color: botPortfolio.unrealizedPnl >= 0 ? ECAM.GREEN : ECAM.RED,
+              fontSize: '0.55rem', fontFamily: 'monospace', fontWeight: 700,
+            }}>
+              UPL:{botPortfolio.unrealizedPnl >= 0 ? '+' : ''}{botPortfolio.unrealizedPnl.toFixed(2)}
+            </Typography>
+            <Typography sx={{
+              color: botPortfolio.dailyPnl >= 0 ? ECAM.GREEN : ECAM.RED,
+              fontSize: '0.55rem', fontFamily: 'monospace', fontWeight: 700,
+            }}>
+              P&L:{botPortfolio.dailyPnl >= 0 ? '+' : ''}{botPortfolio.dailyPnl.toFixed(2)}
+            </Typography>
+            <Typography sx={{ color: ECAM.DIM, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+              T:{botPortfolio.tradesToday} WR:{(botPortfolio.winRate * 100).toFixed(0)}%
+            </Typography>
+          </Box>
+        )}
+      </Box>
+      <Box ref={equityChartRef} sx={{ width: '100%' }} />
     </Box>
   );
 };

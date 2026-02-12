@@ -21,6 +21,19 @@ import type { ProtectAgentState } from '../app/components/TradingEngine/A3CProte
 import type { BootstrapState } from '../app/components/TradingEngine/RLHistoricalBootstrap';
 import type { IndicatorProfilerState } from '../app/components/TradingEngine/IndicatorProfiler';
 
+export interface BotPortfolio {
+  balance: number;           // Cash balance
+  equity: number;            // Balance + unrealized P&L
+  position: number;          // Current position size
+  avgEntryPrice: number;     // Average entry price
+  unrealizedPnl: number;     // Open position P&L
+  dailyPnl: number;          // Realized + unrealized for today
+  tradesToday: number;       // Number of trades today
+  maxDrawdownToday: number;  // Peak-to-trough drawdown
+  winRate: number;           // Win rate of recent trades
+  trades: Trade[];           // Recent trade history (last 50)
+}
+
 interface TradingState {
   // Current market data
   currentPrice: number;
@@ -94,6 +107,9 @@ interface TradingState {
   // Indicator Profiler: optimal indicator value configurations
   indicatorProfiler: IndicatorProfilerState | null;
 
+  // Bot Trade Portfolio (real-time)
+  botPortfolio: BotPortfolio | null;
+
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -119,6 +135,7 @@ interface TradingState {
   updateProtectAgent: (pa: ProtectAgentState) => void;
   updateBootstrapState: (bs: BootstrapState) => void;
   updateIndicatorProfiler: (ip: IndicatorProfilerState) => void;
+  updateBotPortfolio: (bp: BotPortfolio) => void;
   reset: () => void;
 }
 
@@ -151,7 +168,8 @@ const initialState = {
   rlCollector: null,
   protectAgent: null,
   bootstrapState: null,
-  indicatorProfiler: null
+  indicatorProfiler: null,
+  botPortfolio: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -264,6 +282,10 @@ export const useTradingStore = create<TradingState>()(
 
     updateIndicatorProfiler: (ip) => set((state) => {
       state.indicatorProfiler = JSON.parse(JSON.stringify(ip));
+    }),
+
+    updateBotPortfolio: (bp) => set((state) => {
+      state.botPortfolio = JSON.parse(JSON.stringify(bp));
     }),
     
     reset: () => set(() => initialState)

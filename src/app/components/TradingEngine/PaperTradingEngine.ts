@@ -680,6 +680,22 @@ class PaperTradingEngine extends EventEmitter {
   getPortfolioState(): PortfolioState {
     return { ...this.portfolioState };
   }
+
+  getBalance(): number {
+    return this.portfolio;
+  }
+
+  getAvgEntryPrice(): number {
+    return this.avgEntryPrice;
+  }
+
+  getTrades(): Trade[] {
+    return [...this.trades];
+  }
+
+  getEquity(currentPrice: number): number {
+    return this.portfolio + this.position * currentPrice;
+  }
 }
 
 export default PaperTradingEngine;
