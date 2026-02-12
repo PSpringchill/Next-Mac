@@ -238,7 +238,7 @@ const LiveExecutionBridge = () => {
       });
     })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
       .finally(() => { processingRef.current = false; });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent]);
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent, symbol]);
 
   return null;
 };
