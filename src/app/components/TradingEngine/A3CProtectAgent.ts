@@ -725,6 +725,72 @@ class A3CProtectAgent {
     return this.currentAction;
   }
 
+  // ─── Model Save / Load (IndexedDB) ─────────────────────────────────
+
+  async saveModel(version?: string): Promise<string> {
+    const tag = version || `v${Date.now()}`;
+    await this.actorModel.save(`indexeddb://a3c-actor-${tag}`);
+    await this.criticModel.save(`indexeddb://a3c-critic-${tag}`);
+    if (typeof window !== 'undefined') {
+      const meta = {
+        tag,
+        trainSteps: this.trainSteps,
+        avgReward: this.rewardEma,
+        episodeReward: this.episodeReward,
+        lastActorLoss: this.lastActorLoss,
+        lastCriticLoss: this.lastCriticLoss,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(`a3c-meta-${tag}`, JSON.stringify(meta));
+      const versions: string[] = JSON.parse(localStorage.getItem('a3c-versions') || '[]');
+      if (!versions.includes(tag)) {
+        versions.push(tag);
+        if (versions.length > 20) versions.shift();
+        localStorage.setItem('a3c-versions', JSON.stringify(versions));
+      }
+    }
+    console.log(`[A3CProtect] Model saved: ${tag}`);
+    return tag;
+  }
+
+  async loadModel(version: string): Promise<boolean> {
+    try {
+      const actor = await tf.loadLayersModel(`indexeddb://a3c-actor-${version}`);
+      const critic = await tf.loadLayersModel(`indexeddb://a3c-critic-${version}`);
+      actor.compile({ optimizer: tf.train.adam(this.config.learningRate), loss: 'categoricalCrossentropy' });
+      critic.compile({ optimizer: tf.train.adam(this.config.learningRate), loss: 'meanSquaredError' });
+      this.actorModel.dispose();
+      this.criticModel.dispose();
+      this.actorModel = actor;
+      this.criticModel = critic;
+
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(`a3c-meta-${version}`);
+        if (raw) {
+          const meta = JSON.parse(raw);
+          this.trainSteps = meta.trainSteps ?? 0;
+          this.rewardEma = meta.avgReward ?? 0;
+          this.lastActorLoss = meta.lastActorLoss ?? 0;
+          this.lastCriticLoss = meta.lastCriticLoss ?? 0;
+        }
+      }
+      console.log(`[A3CProtect] Model loaded: ${version}`);
+      return true;
+    } catch (err) {
+      console.warn(`[A3CProtect] Failed to load model ${version}:`, err);
+      return false;
+    }
+  }
+
+  static getModelVersions(): { tag: string; meta: any }[] {
+    if (typeof window === 'undefined') return [];
+    const versions: string[] = JSON.parse(localStorage.getItem('a3c-versions') || '[]');
+    return versions.map(tag => {
+      const raw = localStorage.getItem(`a3c-meta-${tag}`);
+      return { tag, meta: raw ? JSON.parse(raw) : null };
+    });
+  }
+
   dispose(): void {
     this.actorModel.dispose();
     this.criticModel.dispose();

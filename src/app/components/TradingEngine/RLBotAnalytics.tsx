@@ -275,6 +275,7 @@ const RLBotAnalytics: React.FC = () => {
   const rlTrainer = useTradingStore((s) => s.rlTrainer);
   const rlCollector = useTradingStore((s) => s.rlCollector);
   const protectAgent = useTradingStore((s) => s.protectAgent);
+  const bootstrapState = useTradingStore((s) => s.bootstrapState);
 
   // Persistent metric history
   const histRef = useRef<MetricHistory>({
@@ -357,13 +358,60 @@ const RLBotAnalytics: React.FC = () => {
           <Typography sx={{ color: C.dim, fontSize: '0.6rem', fontFamily: 'monospace' }}>
             BUF:{rlCollector?.bufferSize ?? 0}
           </Typography>
+          {bootstrapState && (
+            <Typography sx={{
+              color: bootstrapState.status === 'done' ? C.green
+                : bootstrapState.status === 'error' ? C.red
+                : C.amber,
+              fontSize: '0.6rem', fontFamily: 'monospace', fontWeight: 700,
+            }}>
+              BOOT:{bootstrapState.status.toUpperCase()}
+              {bootstrapState.status === 'replaying' ? ` ${bootstrapState.candlesReplayed}/${bootstrapState.candlesFetched}` : ''}
+              {bootstrapState.status === 'training' ? ` R${bootstrapState.trainRounds}` : ''}
+              {bootstrapState.status === 'done' ? ` ${bootstrapState.candlesFetched}c ${bootstrapState.trainRounds}r ${bootstrapState.elapsedMs.toFixed(0)}ms` : ''}
+            </Typography>
+          )}
         </Box>
       </Box>
 
-      {noData && (
+      {/* Bootstrap / Model Version Info */}
+      {bootstrapState && bootstrapState.status === 'done' && (
+        <Box sx={{
+          display: 'flex', gap: 2, px: 1, py: 0.4,
+          bgcolor: 'rgba(0,255,136,0.03)', borderRadius: '4px', border: `1px solid rgba(0,255,136,0.1)`,
+          alignItems: 'center',
+        }}>
+          <Typography sx={{ color: C.green, fontSize: '0.55rem', fontFamily: 'monospace', fontWeight: 700 }}>
+            BOOTSTRAPPED
+          </Typography>
+          <Typography sx={{ color: C.dim, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+            {bootstrapState.candlesFetched} candles (6h 1m) → {bootstrapState.trainRounds} train rounds
+          </Typography>
+          {bootstrapState.loadedVersion && (
+            <Typography sx={{ color: C.cyan, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+              Restored: {bootstrapState.loadedVersion}
+            </Typography>
+          )}
+          {bootstrapState.modelVersion && (
+            <Typography sx={{ color: C.amber, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+              Saved: {bootstrapState.modelVersion}
+            </Typography>
+          )}
+        </Box>
+      )}
+
+      {noData && !bootstrapState && (
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <Typography sx={{ color: C.dim, fontSize: '0.7rem' }}>
             Waiting for market data — RL agents will begin collecting and training automatically...
+          </Typography>
+        </Box>
+      )}
+
+      {bootstrapState && bootstrapState.status === 'error' && (
+        <Box sx={{ px: 1, py: 0.4, bgcolor: 'rgba(255,0,0,0.05)', borderRadius: '4px', border: `1px solid rgba(255,0,0,0.15)` }}>
+          <Typography sx={{ color: C.red, fontSize: '0.55rem', fontFamily: 'monospace' }}>
+            Bootstrap error: {bootstrapState.error}
           </Typography>
         </Box>
       )}

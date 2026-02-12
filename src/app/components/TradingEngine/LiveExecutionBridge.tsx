@@ -7,11 +7,15 @@ import PaperTradingEngine from './PaperTradingEngine';
 import RLDataCollector from './RLDataCollector';
 import RLBacktestTrainer from './RLBacktestTrainer';
 import A3CProtectAgent from './A3CProtectAgent';
+import { bootstrapFromHistory } from './RLHistoricalBootstrap';
 
 const THROTTLE_MS = 800;
 
+const MODEL_AUTOSAVE_INTERVAL = 300; // auto-save models every 300 ticks (~4 min)
+
 const LiveExecutionBridge = () => {
   const orderBookContext = useContext(OrderBookContext) as OrderBookContextType | null;
+  const symbol = orderBookContext?.symbol ?? 'BNBUSDT';
   const executionMode = useTradingStore((state) => state.executionMode);
   const isExecutionEnabled = useTradingStore((state) => state.isExecutionEnabled);
   const recordingEnabled = useTradingStore((state) => state.recordingEnabled);
@@ -26,6 +30,7 @@ const LiveExecutionBridge = () => {
   const updateRLTrainer = useTradingStore((state) => state.updateRLTrainer);
   const updateRLCollector = useTradingStore((state) => state.updateRLCollector);
   const updateProtectAgent = useTradingStore((state) => state.updateProtectAgent);
+  const updateBootstrapState = useTradingStore((state) => state.updateBootstrapState);
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const rlCollectorRef = useRef<RLDataCollector | null>(null);
@@ -34,6 +39,8 @@ const LiveExecutionBridge = () => {
   const priceHistoryRef = useRef<number[]>([]);
   const lastUpdateRef = useRef(0);
   const processingRef = useRef(false);
+  const bootstrapRanRef = useRef(false);
+  const tickCountRef = useRef(0);
 
   // Lazy init to avoid double-construction in React strict mode
   if (!paperEngineRef.current) {
@@ -48,6 +55,29 @@ const LiveExecutionBridge = () => {
   if (!protectAgentRef.current) {
     protectAgentRef.current = new A3CProtectAgent();
   }
+
+  // ─── Historical Bootstrap: fetch 6h of 1m candles on mount ────────
+  useEffect(() => {
+    if (bootstrapRanRef.current) return;
+    bootstrapRanRef.current = true;
+
+    const collector = rlCollectorRef.current;
+    const trainer = rlTrainerRef.current;
+    const protect = protectAgentRef.current;
+    if (!collector || !trainer) return;
+
+    bootstrapFromHistory(symbol, collector, trainer, protect, (bs) => {
+      updateBootstrapState(bs);
+    }).then((final) => {
+      updateBootstrapState(final);
+      // Update store with post-bootstrap trainer state
+      updateRLTrainer(trainer.getState());
+      updateRLCollector(collector.getState());
+    }).catch(err => {
+      console.error('[LiveExecutionBridge] bootstrap error:', err);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const marketData = useMemo(() => {
     const orderBook = orderBookContext?.orderBookData;
@@ -137,6 +167,14 @@ const LiveExecutionBridge = () => {
         const rlState = rlTrainer.tick(snapshot, rlCollector.getBuffer());
         updateRLTrainer(rlState);
         updateRLCollector(rlCollector.getState());
+
+        // Auto-save models periodically
+        tickCountRef.current++;
+        if (tickCountRef.current % MODEL_AUTOSAVE_INTERVAL === 0 && rlState.totalTrainSteps > 0) {
+          const tag = `auto-${symbol}-${Date.now()}`;
+          rlTrainer.saveModel(tag).catch(() => {});
+          protectAgentRef.current?.saveModel(tag).catch(() => {});
+        }
 
         // ─── A3C Balance Protection Agent ──────────────────────────
         const protectAgent = protectAgentRef.current;

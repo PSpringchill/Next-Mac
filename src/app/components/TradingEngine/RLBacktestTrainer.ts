@@ -445,6 +445,83 @@ class RLBacktestTrainer {
     };
   }
 
+  // ─── Model Save / Load (IndexedDB) ─────────────────────────────────
+
+  async saveModel(version?: string): Promise<string> {
+    const tag = version || `v${Date.now()}`;
+    const key = `indexeddb://rl-dqn-${tag}`;
+    await this.onlineNet.save(key);
+    // Persist metadata alongside
+    if (typeof window !== 'undefined') {
+      const meta = {
+        tag,
+        trainSteps: this.trainSteps,
+        epsilon: this.epsilon,
+        avgReward: this.avgReward,
+        cumulativePnL: this.cumulativePnL,
+        lastBacktest: this.lastBacktest,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(`rl-dqn-meta-${tag}`, JSON.stringify(meta));
+      // Track version list
+      const versions: string[] = JSON.parse(localStorage.getItem('rl-dqn-versions') || '[]');
+      if (!versions.includes(tag)) {
+        versions.push(tag);
+        if (versions.length > 20) versions.shift(); // keep last 20
+        localStorage.setItem('rl-dqn-versions', JSON.stringify(versions));
+      }
+    }
+    console.log(`[RLTrainer] Model saved: ${tag}`);
+    return tag;
+  }
+
+  async loadModel(version: string): Promise<boolean> {
+    try {
+      const key = `indexeddb://rl-dqn-${version}`;
+      const loaded = await tf.loadLayersModel(key);
+      loaded.compile({ optimizer: tf.train.adam(this.config.learningRate), loss: 'meanSquaredError' });
+      this.onlineNet.dispose();
+      this.onlineNet = loaded;
+      this.syncTargetNet();
+
+      // Restore metadata
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem(`rl-dqn-meta-${version}`);
+        if (raw) {
+          const meta = JSON.parse(raw);
+          this.trainSteps = meta.trainSteps ?? 0;
+          this.epsilon = meta.epsilon ?? this.config.epsilonEnd;
+          this.avgReward = meta.avgReward ?? 0;
+          this.rewardEma = meta.avgReward ?? 0;
+          this.cumulativePnL = meta.cumulativePnL ?? 0;
+          this.lastBacktest = meta.lastBacktest ?? this.lastBacktest;
+        }
+      }
+      console.log(`[RLTrainer] Model loaded: ${version}`);
+      return true;
+    } catch (err) {
+      console.warn(`[RLTrainer] Failed to load model ${version}:`, err);
+      return false;
+    }
+  }
+
+  static getModelVersions(): { tag: string; meta: any }[] {
+    if (typeof window === 'undefined') return [];
+    const versions: string[] = JSON.parse(localStorage.getItem('rl-dqn-versions') || '[]');
+    return versions.map(tag => {
+      const raw = localStorage.getItem(`rl-dqn-meta-${tag}`);
+      return { tag, meta: raw ? JSON.parse(raw) : null };
+    });
+  }
+
+  // ─── External training trigger (for historical bootstrap) ──────────
+
+  runExternalTraining(buffer: readonly RLSnapshot[]): void {
+    if (buffer.length >= this.config.minBufferSize) {
+      this.runBacktestAndTrain(buffer);
+    }
+  }
+
   dispose(): void {
     this.onlineNet.dispose();
     this.targetNet.dispose();

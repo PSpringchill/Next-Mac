@@ -344,7 +344,7 @@ const TradingViewChart: React.FC<TradingViewChartProps> = ({
               color: stoch.isOverbought ? ECAM.RED : stoch.isOversold ? ECAM.GREEN : ECAM.DIM,
               fontSize: '0.6rem', fontFamily: 'monospace',
             }}>
-              Stoch:{stoch.k.toFixed(0)}/{stoch.d.toFixed(0)}
+              Stoch:{(stoch.k ?? 0).toFixed(0)}/{(stoch.d ?? 0).toFixed(0)}
             </Typography>
           )}
           {adxState && (

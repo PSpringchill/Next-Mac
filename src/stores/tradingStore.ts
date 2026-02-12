@@ -18,6 +18,7 @@ import type { CircuitBreakerState } from '../app/components/TradingEngine/RiskMa
 import type { RLTrainerState } from '../app/components/TradingEngine/RLBacktestTrainer';
 import type { RLCollectorState } from '../app/components/TradingEngine/RLDataCollector';
 import type { ProtectAgentState } from '../app/components/TradingEngine/A3CProtectAgent';
+import type { BootstrapState } from '../app/components/TradingEngine/RLHistoricalBootstrap';
 
 interface TradingState {
   // Current market data
@@ -86,6 +87,9 @@ interface TradingState {
   // A3C Balance Protection Agent
   protectAgent: ProtectAgentState | null;
 
+  // RL Historical Bootstrap
+  bootstrapState: BootstrapState | null;
+
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -109,6 +113,7 @@ interface TradingState {
   updateRLTrainer: (rl: RLTrainerState) => void;
   updateRLCollector: (rc: RLCollectorState) => void;
   updateProtectAgent: (pa: ProtectAgentState) => void;
+  updateBootstrapState: (bs: BootstrapState) => void;
   reset: () => void;
 }
 
@@ -139,7 +144,8 @@ const initialState = {
   circuitBreaker: null,
   rlTrainer: null,
   rlCollector: null,
-  protectAgent: null
+  protectAgent: null,
+  bootstrapState: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -244,6 +250,10 @@ export const useTradingStore = create<TradingState>()(
 
     updateProtectAgent: (pa) => set((state) => {
       state.protectAgent = pa;
+    }),
+
+    updateBootstrapState: (bs) => set((state) => {
+      state.bootstrapState = bs;
     }),
     
     reset: () => set(() => initialState)
