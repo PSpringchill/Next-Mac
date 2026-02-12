@@ -15,6 +15,8 @@ import type { RegimeResult } from '../app/components/TradingEngine/DynamicThresh
 import type { SignalFilterState } from '../app/components/TradingEngine/PaperTradingEngine';
 import type { RadarVectorState } from '../app/components/TradingEngine/RadarVector';
 import type { CircuitBreakerState } from '../app/components/TradingEngine/RiskManager';
+import type { RLTrainerState } from '../app/components/TradingEngine/RLBacktestTrainer';
+import type { RLCollectorState } from '../app/components/TradingEngine/RLDataCollector';
 
 interface TradingState {
   // Current market data
@@ -76,6 +78,10 @@ interface TradingState {
   // Circuit Breaker (3-level graduated)
   circuitBreaker: CircuitBreakerState | null;
 
+  // RL Backtest Trainer
+  rlTrainer: RLTrainerState | null;
+  rlCollector: RLCollectorState | null;
+
   // Actions
   updateOrderBook: (orderBook: OrderBookData) => void;
   updateSignal: (signal: TradingSignal) => void;
@@ -96,6 +102,8 @@ interface TradingState {
   updateSignalFilter: (filter: SignalFilterState) => void;
   updateRadarVector: (rv: RadarVectorState) => void;
   updateCircuitBreaker: (cb: CircuitBreakerState) => void;
+  updateRLTrainer: (rl: RLTrainerState) => void;
+  updateRLCollector: (rc: RLCollectorState) => void;
   reset: () => void;
 }
 
@@ -123,7 +131,9 @@ const initialState = {
   paretoHistory: [],
   signalFilter: null,
   radarVector: null,
-  circuitBreaker: null
+  circuitBreaker: null,
+  rlTrainer: null,
+  rlCollector: null
 };
 
 export const useTradingStore = create<TradingState>()(
@@ -216,6 +226,14 @@ export const useTradingStore = create<TradingState>()(
 
     updateCircuitBreaker: (cb) => set((state) => {
       state.circuitBreaker = JSON.parse(JSON.stringify(cb));
+    }),
+
+    updateRLTrainer: (rl) => set((state) => {
+      state.rlTrainer = rl;
+    }),
+
+    updateRLCollector: (rc) => set((state) => {
+      state.rlCollector = rc;
     }),
     
     reset: () => set(() => initialState)
