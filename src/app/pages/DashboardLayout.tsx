@@ -64,7 +64,7 @@ const TabPanel = ({ children, value, index }: any) => (
       animation: value === index ? 'fadeIn 0.3s' : 'none' 
     }}
   >
-    {value === index && children}
+    {children}
   </Box>
 );
 

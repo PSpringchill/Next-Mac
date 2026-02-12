@@ -7,10 +7,18 @@ import InteractiveFeatureImportance from '../../components/TradingEngine/Interac
 import LearningProgressVisualizer from '../../components/TradingEngine/LearningProgressVisualizer';
 import StrategyEngineDashboard from '../../components/TradingEngine/StrategyEngineDashboard';
 import AdvancedVisualizationDashboard from '../../components/TradingEngine/AdvancedVisualizationDashboard';
+import RLBotAnalytics from '../../components/TradingEngine/RLBotAnalytics';
 
 const MachineLearningSection: React.FC = () => {
   return (
     <Grid container spacing={2}>
+      {/* RL Bot Analytics & Performance — Learning Curves */}
+      <Grid item xs={12}>
+        <DashboardCard title="RL Bot — Real-Time Analytics & Performance" height="auto" gradient>
+          <RLBotAnalytics />
+        </DashboardCard>
+      </Grid>
+
       {/* ML Model Status Bar */}
       <Grid item xs={12}>
         <DashboardCard title="Adaptive ML Model Status" height="120px" gradient>
