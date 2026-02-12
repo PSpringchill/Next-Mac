@@ -6,6 +6,7 @@ import { useTradingStore } from '@stores/tradingStore';
 import PaperTradingEngine from './PaperTradingEngine';
 import RLDataCollector from './RLDataCollector';
 import RLBacktestTrainer from './RLBacktestTrainer';
+import A3CProtectAgent from './A3CProtectAgent';
 
 const THROTTLE_MS = 800;
 
@@ -24,10 +25,13 @@ const LiveExecutionBridge = () => {
   const updateCircuitBreaker = useTradingStore((state) => state.updateCircuitBreaker);
   const updateRLTrainer = useTradingStore((state) => state.updateRLTrainer);
   const updateRLCollector = useTradingStore((state) => state.updateRLCollector);
+  const updateProtectAgent = useTradingStore((state) => state.updateProtectAgent);
 
   const paperEngineRef = useRef<PaperTradingEngine | null>(null);
   const rlCollectorRef = useRef<RLDataCollector | null>(null);
   const rlTrainerRef = useRef<RLBacktestTrainer | null>(null);
+  const protectAgentRef = useRef<A3CProtectAgent | null>(null);
+  const priceHistoryRef = useRef<number[]>([]);
   const lastUpdateRef = useRef(0);
   const processingRef = useRef(false);
 
@@ -40,6 +44,9 @@ const LiveExecutionBridge = () => {
   }
   if (!rlTrainerRef.current) {
     rlTrainerRef.current = new RLBacktestTrainer();
+  }
+  if (!protectAgentRef.current) {
+    protectAgentRef.current = new A3CProtectAgent();
   }
 
   const marketData = useMemo(() => {
@@ -130,6 +137,39 @@ const LiveExecutionBridge = () => {
         const rlState = rlTrainer.tick(snapshot, rlCollector.getBuffer());
         updateRLTrainer(rlState);
         updateRLCollector(rlCollector.getState());
+
+        // ─── A3C Balance Protection Agent ──────────────────────────
+        const protectAgent = protectAgentRef.current;
+        if (protectAgent) {
+          // Track price history for multi-TF changes
+          priceHistoryRef.current.push(marketData.price);
+          if (priceHistoryRef.current.length > 60) priceHistoryRef.current.shift();
+          const ph = priceHistoryRef.current;
+          const pn = ph.length;
+          const pct5 = pn >= 6 ? (marketData.price - ph[pn - 6]) / ph[pn - 6] * 100 : 0;
+          const pct20 = pn >= 21 ? (marketData.price - ph[pn - 21]) / ph[pn - 21] * 100 : 0;
+          const pct50 = pn >= 51 ? (marketData.price - ph[pn - 51]) / ph[pn - 51] * 100 : 0;
+
+          // Get portfolio state from engine
+          const portfolio = engine.getPortfolioState() ?? {
+            position: 0, unrealizedPnl: 0, timeInTradeSec: 0,
+            marginUtilization: 0, tradesToday: 0, dailyPnl: 0,
+            maxDrawdownToday: 0, availableRiskBudget: 1,
+          };
+
+          const protectState = protectAgent.tick(
+            portfolio,
+            technicals,
+            monitoring.circuitBreaker ?? null,
+            rlState,
+            marketData.price,
+            technicals?.atr.value ?? 0.01,
+            { pct5, pct20, pct50 },
+            spread,
+            snapshot.features[26] ?? 0, // volume_roc from RL features
+          );
+          updateProtectAgent(protectState);
+        }
       }
 
       if (!isExecutionEnabled) return;
@@ -160,7 +200,7 @@ const LiveExecutionBridge = () => {
       });
     })().catch(err => console.error('[LiveExecutionBridge] monitoring error:', err))
       .finally(() => { processingRef.current = false; });
-  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector]);
+  }, [executionMode, isExecutionEnabled, marketData, recordingEnabled, appendRecordedData, updateSignal, updateLivePerformance, updateParetoState, updateDynamicRegime, updateSignalFilter, updateRadarVector, updateCircuitBreaker, updateRLTrainer, updateRLCollector, updateProtectAgent]);
 
   return null;
 };

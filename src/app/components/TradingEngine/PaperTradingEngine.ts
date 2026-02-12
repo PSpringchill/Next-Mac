@@ -676,6 +676,10 @@ class PaperTradingEngine extends EventEmitter {
 
     return result;
   }
+
+  getPortfolioState(): PortfolioState {
+    return { ...this.portfolioState };
+  }
 }
 
 export default PaperTradingEngine;
