@@ -117,7 +117,7 @@ describe('RLBacktestTrainer', () => {
     trainer.dispose();
   });
 
-  it('trains after reaching minBufferSize at trainEveryTicks interval', () => {
+  it('trains after reaching minBufferSize at trainEveryTicks interval', async () => {
     const collector = new RLDataCollector();
     const trainer = new RLBacktestTrainer({
       minBufferSize: 100,
@@ -132,6 +132,9 @@ describe('RLBacktestTrainer', () => {
       const snap = collector.collect(price, mockTechnicals(50 + Math.sin(i) * 20), null, Math.sin(i) * 0.3, 0.01, 50);
       trainer.tick(snap, collector.getBuffer());
     }
+
+    // runBacktestAndTrain is async fire-and-forget from tick(); wait for pending fits
+    await new Promise(r => setTimeout(r, 500));
 
     const state = trainer.getState();
     // Should have trained at tick 100 and 200
@@ -153,7 +156,7 @@ describe('RLBacktestTrainer', () => {
     trainer.dispose();
   });
 
-  it('backtest stats are populated after training', () => {
+  it('backtest stats are populated after training', async () => {
     const collector = new RLDataCollector();
     const trainer = new RLBacktestTrainer({
       minBufferSize: 50,
@@ -168,6 +171,9 @@ describe('RLBacktestTrainer', () => {
       trainer.tick(snap, collector.getBuffer());
     }
 
+    // runBacktestAndTrain is async fire-and-forget from tick(); wait for pending fits
+    await new Promise(r => setTimeout(r, 500));
+
     const state = trainer.getState();
     expect(state.lastBacktestTrades).toBeGreaterThan(0);
     // Win rate should be between 0 and 1
@@ -177,7 +183,7 @@ describe('RLBacktestTrainer', () => {
     trainer.dispose();
   });
 
-  it('epsilon decays over training steps', () => {
+  it('epsilon decays over training steps', async () => {
     const collector = new RLDataCollector();
     const trainer = new RLBacktestTrainer({
       minBufferSize: 50,
@@ -194,6 +200,9 @@ describe('RLBacktestTrainer', () => {
       const snap = collector.collect(100 + i * 0.1, mockTechnicals(), null, 0, 0.01, 50);
       trainer.tick(snap, collector.getBuffer());
     }
+
+    // runBacktestAndTrain is async fire-and-forget from tick(); wait for pending fits
+    await new Promise(r => setTimeout(r, 500));
 
     const epsilonAfter = trainer.getState().epsilon;
     expect(epsilonAfter).toBeLessThan(epsilonBefore);

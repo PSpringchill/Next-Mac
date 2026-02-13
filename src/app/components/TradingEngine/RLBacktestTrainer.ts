@@ -191,6 +191,7 @@ class RLBacktestTrainer {
   // Adaptive training frequency
   private currentTrainFreq: number;
   private ticksSinceLastTrain: number = 0;
+  private isTraining: boolean = false;
 
   // Current inference
   private currentAction: RLAction = RLAction.HOLD;
@@ -283,11 +284,14 @@ class RLBacktestTrainer {
 
   // ─── Core: backtest collected data and generate training experiences ──
 
-  private runBacktestAndTrain(buffer: readonly RLSnapshot[]): void {
+  private async runBacktestAndTrain(buffer: readonly RLSnapshot[]): Promise<void> {
+    if (this.isTraining) return; // prevent concurrent fit() calls
+    this.isTraining = true;
+
     const { lookAheadTicks, transactionCost, holdPenalty } = this.config;
     const n = buffer.length;
     const maxStart = n - lookAheadTicks - 1;
-    if (maxStart < 1) return;
+    if (maxStart < 1) { this.isTraining = false; return; }
 
     // ── Phase 1: Backtest — simulate entries at sampled points ──────
     const sampleCount = Math.min(500, maxStart);
@@ -383,13 +387,15 @@ class RLBacktestTrainer {
 
     // ── Phase 3: Train DQN from replay buffer (PER) ─────────────────
     if (this.replay.length >= this.config.batchSize) {
-      this.trainStep();
+      await this.trainStep();
     }
 
     // ── Phase 4: Validation on held-out data ─────────────────────────
     if (this.trainSteps > 0 && this.trainSteps % 5 === 0) {
       this.runValidation(buffer);
     }
+
+    this.isTraining = false;
   }
 
   // ─── Reward Normalization ──────────────────────────────────────────────
@@ -452,7 +458,7 @@ class RLBacktestTrainer {
 
   // ─── DQN Training Step (with PER) ─────────────────────────────────────
 
-  private trainStep(): void {
+  private async trainStep(): Promise<void> {
     const { batchSize, gamma } = this.config;
 
     // Prioritized sampling
@@ -503,22 +509,23 @@ class RLBacktestTrainer {
       totalReward += exp.reward;
     }
 
-    // Train
+    // Train — MUST await before disposing tensors
     const targetsTensor = tf.tensor2d(targets);
-    const history = this.onlineNet.fit(statesTensor, targetsTensor, {
-      epochs: 1,
-      verbose: 0,
-    });
-
-    history.then(h => {
+    try {
+      const h = await this.onlineNet.fit(statesTensor, targetsTensor, {
+        epochs: 1,
+        verbose: 0,
+      });
       const loss = h.history.loss;
       if (Array.isArray(loss) && typeof loss[0] === 'number') {
         this.lastLoss = loss[0];
       }
-    }).catch(() => {});
-
-    statesTensor.dispose();
-    targetsTensor.dispose();
+    } catch (err) {
+      console.warn('[RLTrainer] Training step failed:', err);
+    } finally {
+      statesTensor.dispose();
+      targetsTensor.dispose();
+    }
 
     // Update stats
     this.trainSteps++;

@@ -194,6 +194,7 @@ class A3CProtectAgent {
   private winCount: number = 0;
   private tradeCount: number = 0;
   private prevPnL: number = 0;
+  private isTraining: boolean = false;
 
   // Current inference
   private currentAction: ProtectAction = ProtectAction.HOLD;
@@ -620,9 +621,11 @@ class A3CProtectAgent {
 
   // ─── A3C Training (N-step returns + advantage) ────────────────────────
 
-  private train(): void {
+  private async train(): Promise<void> {
+    if (this.isTraining) return; // prevent concurrent fit() calls
     const n = this.trajectory.length;
     if (n < this.config.nSteps) return;
+    this.isTraining = true;
 
     // Take last N steps
     const steps = this.trajectory.slice(-this.config.nSteps);
@@ -644,18 +647,21 @@ class A3CProtectAgent {
     const statesTensor = tf.tensor2d(states);
     const returnsTensor = tf.tensor2d(returns.map(r => [r]));
 
-    // ── Train Critic ──────────────────────────────────────────────────
-    this.criticModel.fit(statesTensor, returnsTensor, { epochs: 1, verbose: 0 })
-      .then(h => {
-        const loss = h.history.loss;
-        if (Array.isArray(loss) && typeof loss[0] === 'number') {
-          this.lastCriticLoss = loss[0];
-        }
-      }).catch(() => {});
+    // ── Train Critic — MUST await before disposing tensors ────────────
+    try {
+      const criticHistory = await this.criticModel.fit(statesTensor, returnsTensor, { epochs: 1, verbose: 0 });
+      const criticLoss = criticHistory.history.loss;
+      if (Array.isArray(criticLoss) && typeof criticLoss[0] === 'number') {
+        this.lastCriticLoss = criticLoss[0];
+      }
+    } catch (err) {
+      console.warn('[A3CProtect] Critic training failed:', err);
+    }
 
     // ── Train Actor (policy gradient with advantages) ─────────────────
     const actorPred = this.actorModel.predict(statesTensor) as tf.Tensor;
     const probsData = actorPred.arraySync() as number[][];
+    actorPred.dispose();
 
     // Build target: increase probability of good actions, decrease bad
     const targets: number[][] = [];
@@ -676,15 +682,17 @@ class A3CProtectAgent {
     }
 
     const targetsTensor = tf.tensor2d(targets);
-    this.actorModel.fit(statesTensor, targetsTensor, { epochs: 1, verbose: 0 })
-      .then(h => {
-        const loss = h.history.loss;
-        if (Array.isArray(loss) && typeof loss[0] === 'number') {
-          this.lastActorLoss = loss[0];
-        }
-      }).catch(() => {});
+    try {
+      const actorHistory = await this.actorModel.fit(statesTensor, targetsTensor, { epochs: 1, verbose: 0 });
+      const actorLoss = actorHistory.history.loss;
+      if (Array.isArray(actorLoss) && typeof actorLoss[0] === 'number') {
+        this.lastActorLoss = actorLoss[0];
+      }
+    } catch (err) {
+      console.warn('[A3CProtect] Actor training failed:', err);
+    }
 
-    actorPred.dispose();
+    // Dispose tensors AFTER both fits complete
     statesTensor.dispose();
     returnsTensor.dispose();
     targetsTensor.dispose();
@@ -697,6 +705,8 @@ class A3CProtectAgent {
     if (this.trajectory.length > this.config.nSteps * 5) {
       this.trajectory = this.trajectory.slice(-this.config.nSteps * 2);
     }
+
+    this.isTraining = false;
   }
 
   // ─── Public API ──────────────────────────────────────────────────────

@@ -102,7 +102,7 @@ describe('A3CProtectAgent', () => {
     agent.dispose();
   });
 
-  it('trains after enough ticks', () => {
+  it('trains after enough ticks', async () => {
     const agent = new A3CProtectAgent({ trainEveryTicks: 20, nSteps: 5 });
 
     for (let i = 0; i < 50; i++) {
@@ -114,6 +114,9 @@ describe('A3CProtectAgent', () => {
         price, 0.5, defaultPriceChanges, 0.01, 0,
       );
     }
+
+    // train() is async fire-and-forget from tick(); wait for pending fits
+    await new Promise(r => setTimeout(r, 500));
 
     const state = agent.getState();
     expect(state.totalTrainSteps).toBeGreaterThanOrEqual(1);
