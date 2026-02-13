@@ -8,6 +8,15 @@ interface GaussianMixture {
   likelihood(observations: number[]): number;
 }
 
+// Soft regime output: probability distribution over all states
+export interface SoftRegimeOutput {
+  regime: MarketRegime & { isTransition: boolean };
+  probabilities: number[];       // softmax posterior over states
+  stateNames: string[];          // ['trending_up', 'trending_down', 'ranging', 'volatile', 'breakout']
+  entropy: number;               // Shannon entropy of distribution (0 = certain, high = uncertain)
+  dominantProb: number;          // probability of the winning state
+}
+
 class HiddenMarkovModel {
   private states: MarketRegime[] = [
     { name: 'trending_up', volatility: 0.02, momentum: 1, isTransition: false },
@@ -69,6 +78,9 @@ class HiddenMarkovModel {
     }));
   }
   
+  // Last soft output for external consumers
+  private lastSoftOutput: SoftRegimeOutput | null = null;
+
   async detectRegime(
     microstructure: OrderBookMicrostructure,
     priceChange: number
@@ -103,6 +115,9 @@ class HiddenMarkovModel {
       this.emissionProbs[i].likelihood(observations)
     );
     
+    // Compute soft regime probabilities (posterior via softmax of log-likelihoods)
+    const probabilities = this.computeSoftProbabilities(likelihoods);
+
     // Viterbi algorithm for most likely state sequence
     const newState = this.viterbiStep(likelihoods);
     const isTransition = newState !== this.currentState;
@@ -116,7 +131,7 @@ class HiddenMarkovModel {
     
     const stateInfo = this.states[newState];
     
-    return {
+    const regime = {
       ...stateInfo,
       // Blend state values with real-time rolling metrics
       // Use priceChange-based momentum for ranging state to show micro-trends
@@ -124,6 +139,47 @@ class HiddenMarkovModel {
       volatility: stateInfo.volatility * 0.5 + this.rollingVolatility * 0.5,
       isTransition
     };
+
+    // Cache soft output
+    this.lastSoftOutput = {
+      regime,
+      probabilities,
+      stateNames: this.states.map(s => s.name),
+      entropy: this.shannonEntropy(probabilities),
+      dominantProb: probabilities[newState],
+    };
+
+    return regime;
+  }
+
+  // Soft regime probabilities: posterior distribution via softmax
+  private computeSoftProbabilities(likelihoods: number[]): number[] {
+    // Multiply by transition probs from current state for proper Bayesian posterior
+    const logProbs = likelihoods.map((l, j) => {
+      const prior = this.transitionProbs[this.currentState][j];
+      const safeLikelihood = Math.max(l, 1e-300);
+      return Math.log(safeLikelihood) + Math.log(Math.max(prior, 1e-10));
+    });
+
+    // Softmax for numerical stability
+    const maxLog = Math.max(...logProbs);
+    const exps = logProbs.map(lp => Math.exp(lp - maxLog));
+    const sumExp = exps.reduce((a, b) => a + b, 0);
+    return exps.map(e => e / sumExp);
+  }
+
+  // Shannon entropy: H = -sum(p * log(p))
+  private shannonEntropy(probs: number[]): number {
+    let h = 0;
+    for (const p of probs) {
+      if (p > 1e-10) h -= p * Math.log(p);
+    }
+    return h;
+  }
+
+  // Public accessor for soft regime output
+  getSoftRegime(): SoftRegimeOutput | null {
+    return this.lastSoftOutput;
   }
   
   private viterbiStep(likelihoods: number[]): number {

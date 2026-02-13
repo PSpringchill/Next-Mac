@@ -77,16 +77,90 @@ export const RL_FEATURE_NAMES = [
 
 export const RL_FEATURE_DIM = RL_FEATURE_NAMES.length; // 28
 
+// ─── Welford Rolling Z-Score Normalizer ─────────────────────────────────────
+// Maintains online mean/variance per feature using Welford's algorithm.
+// Prevents blow-up in flat markets via a variance floor ε.
+
+class RollingZScoreNormalizer {
+  private count: number = 0;
+  private mean: Float64Array;
+  private m2: Float64Array;   // sum of squared deviations
+  private readonly dim: number;
+  private readonly epsilon: number;
+  private readonly warmupTicks: number;
+
+  constructor(dim: number, epsilon: number = 1e-6, warmupTicks: number = 50) {
+    this.dim = dim;
+    this.epsilon = epsilon;
+    this.warmupTicks = warmupTicks;
+    this.mean = new Float64Array(dim);
+    this.m2 = new Float64Array(dim);
+  }
+
+  // Update running stats and return Z-scored features
+  update(raw: number[]): number[] {
+    this.count++;
+    const n = this.count;
+    const result = new Array<number>(this.dim);
+
+    for (let i = 0; i < this.dim; i++) {
+      const x = Number.isFinite(raw[i]) ? raw[i] : 0;
+      const delta = x - this.mean[i];
+      this.mean[i] += delta / n;
+      const delta2 = x - this.mean[i];
+      this.m2[i] += delta * delta2;
+
+      // During warmup, pass through raw values (not enough data for stable stats)
+      if (n < this.warmupTicks) {
+        result[i] = x;
+      } else {
+        const variance = this.m2[i] / n;
+        const std = Math.sqrt(Math.max(variance, this.epsilon));
+        result[i] = (x - this.mean[i]) / std;
+      }
+    }
+    return result;
+  }
+
+  isWarmedUp(): boolean {
+    return this.count >= this.warmupTicks;
+  }
+
+  getStats(): { mean: number[]; variance: number[]; count: number } {
+    const variance = new Array<number>(this.dim);
+    for (let i = 0; i < this.dim; i++) {
+      variance[i] = this.count > 0 ? this.m2[i] / this.count : 0;
+    }
+    return {
+      mean: Array.from(this.mean),
+      variance,
+      count: this.count,
+    };
+  }
+
+  reset(): void {
+    this.count = 0;
+    this.mean.fill(0);
+    this.m2.fill(0);
+  }
+}
+
+export { RollingZScoreNormalizer };
+
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 export interface RLCollectorConfig {
   maxDurationMs: number;    // Rolling window duration (default: 6 hours)
   maxSnapshots: number;     // Max snapshots to keep (memory cap)
+  zScoreEpsilon: number;    // Variance floor for Z-score normalization
+  zScoreWarmup: number;     // Ticks before Z-score kicks in
 }
 
 const DEFAULT_CONFIG: RLCollectorConfig = {
   maxDurationMs: 6 * 60 * 60 * 1000,  // 6 hours
   maxSnapshots: 30000,                  // ~30k ticks ≈ 6hrs at ~800ms throttle
+  zScoreEpsilon: 1e-6,                  // Variance floor ε
+  zScoreWarmup: 50,                     // 50 ticks warmup
 };
 
 // ─── Collector ──────────────────────────────────────────────────────────────
@@ -118,6 +192,9 @@ class RLDataCollector {
   private volumeHistory: number[] = [];
   private readonly priceHistoryMax = 120; // keep 120 ticks for lookback
 
+  // ─── Rolling Z-Score normalizer (variance floor ε) ─────────────────
+  private zNorm: RollingZScoreNormalizer;
+
   constructor(config?: Partial<RLCollectorConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
@@ -125,6 +202,11 @@ class RLDataCollector {
     this.ema21 = new TVEma({ period: 21, values: [] });
     this.ema50 = new TVEma({ period: 50, values: [] });
     this.ema200 = new TVEma({ period: 200, values: [] });
+    this.zNorm = new RollingZScoreNormalizer(
+      RL_FEATURE_DIM,
+      this.config.zScoreEpsilon,
+      this.config.zScoreWarmup,
+    );
   }
 
   // ─── Main collection method — call on every tick ─────────────────────
@@ -167,11 +249,16 @@ class RLDataCollector {
       this.volumeHistory.shift();
     }
 
-    // Build feature vector
+    // Build raw feature vector then apply rolling Z-score normalization
     const atr = technicals?.atr.value ?? 1e-8;
     const safeATR = Math.max(atr, price * 0.0001); // floor to 0.01%
 
-    const features = this.buildFeatures(price, technicals, linReg, obi, spread, safeATR, tickVolume);
+    const rawFeatures = this.buildFeatures(price, technicals, linReg, obi, spread, safeATR, tickVolume);
+    const features = this.zNorm.update(rawFeatures);
+    // Clamp post-normalization to [-10, 10]
+    for (let i = 0; i < RL_FEATURE_DIM; i++) {
+      features[i] = Math.max(-10, Math.min(10, Number.isFinite(features[i]) ? features[i] : 0));
+    }
 
     const snapshot: RLSnapshot = {
       timestamp: now,
@@ -266,11 +353,6 @@ class RLDataCollector {
     // Spread normalized by ATR
     f[27] = spread / atr;
 
-    // Clamp all features to [-10, 10] to prevent extreme values
-    for (let i = 0; i < RL_FEATURE_DIM; i++) {
-      f[i] = Math.max(-10, Math.min(10, Number.isFinite(f[i]) ? f[i] : 0));
-    }
-
     return f;
   }
 
@@ -327,6 +409,7 @@ class RLDataCollector {
     this.tickCount = 0;
     this.priceHistory = [];
     this.volumeHistory = [];
+    this.zNorm.reset();
     this.vwapNumerator = 0;
     this.vwapDenominator = 0;
     this.lastVwap = 0;

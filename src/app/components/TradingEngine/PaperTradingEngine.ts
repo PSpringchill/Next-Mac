@@ -15,7 +15,7 @@ import ParetoAnalyzer, { type ParetoState, AlphaRiskState } from './ParetoAnalyz
 import DynamicThresholds, { type RegimeResult } from './DynamicThresholds';
 import GradientSurpriseMonitor, { type SurpriseState } from './GradientSurpriseMonitor';
 import Level2FeatureExtractor from './Level2FeatureExtractor';
-import HiddenMarkovModel from './HiddenMarkovModel';
+import HiddenMarkovModel, { type SoftRegimeOutput } from './HiddenMarkovModel';
 import EnsembleSignalGenerator, {
   type EnsembleResult,
   type EnsembleConfig,
@@ -570,9 +570,27 @@ class PaperTradingEngine extends EventEmitter {
         const rawKelly = b > 0 ? Math.max(0, (winRate * (1 + b) - 1) / b) : 0;
         kellyFraction = Math.min(0.25, rawKelly); // Quarter-Kelly safety cap
       }
+
+      // ─── Bayesian Uncertainty Gate ─────────────────────────────────────
+      // Size_final = A_final × Sigmoid((μ_conf - τ) / (σ_conf + λ))
+      // When HMM is uncertain (high entropy), reduce size automatically.
+      // Max entropy for 5 states = ln(5) ≈ 1.609
+      const softRegime = this.hmmRegimeDetector.getSoftRegime();
+      let uncertaintyGate = 1.0;
+      if (softRegime) {
+        const maxEntropy = Math.log(5); // ln(5) for 5 states
+        const normalizedEntropy = softRegime.entropy / maxEntropy; // [0, 1]
+        // Sigmoid gate: high confidence → gate ≈ 1; high uncertainty → gate → 0.3
+        const tau = 0.5;   // confidence threshold
+        const lambda = 0.1; // smoothing factor
+        const confScore = softRegime.dominantProb;
+        uncertaintyGate = 1 / (1 + Math.exp(-(confScore - tau) / (normalizedEntropy + lambda)));
+        uncertaintyGate = Math.max(0.3, Math.min(1.0, uncertaintyGate)); // floor at 30%
+      }
+
       const availableCapital = this.portfolio * 0.5; // 50% cash reserve
       const baseSize = Math.abs((availableCapital * kellyFraction * boostedConfidence) / marketData.price);
-      const size = baseSize * paretoMultiplier;
+      const size = baseSize * paretoMultiplier * uncertaintyGate;
 
       const executionResult = this.executionEngine.executeOrder(
         { direction, size, urgency: ensembleConfidence },
@@ -626,9 +644,12 @@ class PaperTradingEngine extends EventEmitter {
           lastTradeTimestamp: marketData.timestamp,
         };
 
+        // Pass equity + soft regime for multi-layer reward computation
+        const prevEquity = this.portfolio + this.portfolioState.position * marketData.price;
+        const softRegimeForReward = this.hmmRegimeDetector.getSoftRegime();
         reward = this.rewardCalculator.computeReward(
-          { portfolio: this.portfolioState },
-          { portfolio: nextState },
+          { portfolio: this.portfolioState, equityPrev: prevEquity, softRegime: softRegimeForReward },
+          { portfolio: nextState, equityNext: newEquity, softRegime: softRegimeForReward },
           execution, direction,
         );
 
